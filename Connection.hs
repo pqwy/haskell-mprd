@@ -69,6 +69,14 @@ quickConnect = do
     getLines (const False) c
     return c
 
+
+quickRead :: FilePath -> Command a -> IO (Result a)
+quickRead f (Command _ fn) = do
+    h <- openFile f ReadMode
+    c <- MPDConn `fmap` newMVar (Right $ zeroState { mpdConn = h })
+    (>>= fn zeroState) `fmap` getResponseBlock c
+
+
 quickSend :: T.Text -> MPDConn -> IO (Result ())
 quickSend t c = withConnection c $ \s -> B.hPutStrLn (mpdConn s) (TE.encodeUtf8 t) >> hFlush (mpdConn s)
 
