@@ -5,6 +5,7 @@ module Codec
     ( Decoder, Parameter(..), Response(..)
     , joinParams
     , readPosIDs, readSongsPltime, readSingleTags, readDirsFiles, readDirsTracks
+    , readTagTypes, readURLHandlers, readCommands
     ) where
 
 
@@ -17,6 +18,7 @@ import Prelude hiding ( readList )
 
 import Data.List ( unfoldr, sortBy )
 import Data.Function ( on )
+import Data.Maybe
 
 import Control.Monad
 import Control.Applicative hiding ( Alternative(..), many )
@@ -40,6 +42,9 @@ import Text.Parsec.Pos
 class Parameter a where encode :: a -> ByteString
 
 
+instance (Parameter a) => Parameter [a] where
+    encode = joinParams . map encode
+
 instance Parameter Bool where
     encode True  = "1"
     encode False = "0"
@@ -62,9 +67,11 @@ instance Parameter URI where
 instance Parameter QueryPred where
     encode (t, v) = joinParams [t, encode v]
 
-instance Parameter [QueryPred] where
-    encode = joinParams . map encode
+instance Parameter OutputID where
+    encode (OutputID o) = encode o
 
+instance Parameter SubsysChanged where
+    encode = encodeChangedSubsys
 
 
 joinParams :: [ByteString] -> ByteString
@@ -94,6 +101,9 @@ instance Response Stats where
 instance Response Status where
     decode = asDecoder' readStatus
 
+instance Response [SubsysChanged] where
+    decode = asDecoder' readChangedSubsys
+
 instance Response Track where
     decode = asDecoder (readTrack . mpdTags)
 
@@ -111,6 +121,9 @@ instance Response TrackID where
 
 instance Response JobID where
     decode = asDecoder' readJID
+
+instance Response [Output] where
+    decode = asDecoder' readOutputs
 
 
 
@@ -154,7 +167,7 @@ satisfyKey p = try ( lineKV >>= \x@(k, v) ->
 
 
 key :: ByteString -> Parser ByteString
-key x = (fmap snd . satisfyKey . (==)) x
+key x = snd <$> satisfyKey (== x)
             <?> ( "key '" ++ B.unpack x ++ "'" )
 
 
@@ -166,11 +179,6 @@ splitKeyValue t | (k, v) <- split t, B.length v > 2 = Just (k, 2 `B.drop` v)
 
 
 
-
--- readInt :: Text -> Parser Int
--- readInt t = case reads (unfoldr T.uncons t) of
---                  [(x, [])] -> return x
---                  _         -> unexpected (show t)
 readInt :: ByteString -> Parser Int
 readInt t = case B.readInt t of
                  Just (a, b) | B.null b -> return a
@@ -353,6 +361,64 @@ readDirsTracks = asDecoder $ \ts ->
         many ( Left <$> dirField
           <|> (Right <$> readTrack (mpdTags ts)))
 
+
+readOutputs :: Parser [Output]
+readOutputs = many
+        ( mkOut <$> (OutputID <$> (key "outputid" >>= readInt))
+                <*> (E.decodeUtf8 <$> key "outputname")
+                <*> (key "outputenabled" >>= readBool) )
+    where
+        mkOut k n e = Output { outputID = k, outputName = n, outputEnabled = e }
+
+
+readTagTypes :: Decoder [MetaField]
+readTagTypes = asDecoder' $ many ( key "tagtype" )
+
+readURLHandlers :: Decoder [Text]
+readURLHandlers = asDecoder' $
+        many (E.decodeUtf8 <$> key "handler")
+
+readCommands :: Decoder [Text]
+readCommands = asDecoder' $
+        many (E.decodeUtf8 <$> key "command")
+
+
+
+coDecMap :: (Ord a)
+         => [(ByteString, a)]
+         -> (ByteString -> Parser a, a -> ByteString)
+
+coDecMap m = ( \b -> case b `M.lookup` M.fromAscList (sort m) of
+                          Nothing -> unexpected (B.unpack b)
+                          Just x  -> return x
+
+             , \a -> fromMaybe
+                        (error "coDecMap: inexhaustive map.")
+                        (a `M.lookup` (M.fromAscList . sort . swap) m )
+
+             )
+    where
+
+        sort :: (Ord a) => [(a, b)] -> [(a, b)]
+        sort = sortBy (compare `on` fst)
+
+        swap = map (\(a, b) -> (b, a))
+
+
+
+( readChangedSubsys1, encodeChangedSubsys ) = coDecMap
+
+        [ ("database"       , ChangedDatabase      ) 
+        , ("mixer"          , ChangedMixer         ) 
+        , ("options"        , ChangedOptions       ) 
+        , ("output"         , ChangedOutput        ) 
+        , ("player"         , ChangedPlayer        ) 
+        , ("playlist"       , ChangedPlaylist      ) 
+        , ("stored_playlist", ChangedStoredPlaylist) 
+        , ("update"         , ChangedUpdate        ) 
+        ]
+
+readChangedSubsys = many ( key "changed" >>= readChangedSubsys1 )
 
 
 -- }}}

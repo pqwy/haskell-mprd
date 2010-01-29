@@ -77,16 +77,17 @@ data PlayState = StatePlay | StateStop | StatePause
     deriving (Eq, Show)
 
 
--- data IdleSubsystem =
---           IdleDatabase
---         | IdleMixer
---         | IdleOptions
---         | IdleOutput
---         | IdlePlayer
---         | IdlePlaylist
---         | IdleStoredPlaylist
---         | IdleUpdate
---     deriving (Eq, Ord, Show)
+data SubsysChanged =
+          ChangedDatabase
+        | ChangedMixer
+        | ChangedOptions
+        | ChangedOutput
+        | ChangedPlayer
+        | ChangedPlaylist
+        | ChangedStoredPlaylist
+        | ChangedUpdate
+
+    deriving (Eq, Ord, Show)
 
 
 
@@ -114,5 +115,14 @@ data PlaylistTrack = PlaylistTrack
 data Range = PlaylistPos :/: PlaylistPos
     deriving (Eq, Show)
 
+
+newtype OutputID = OutputID Int
+    deriving (Eq, Show)
+
+
+data Output = Output { outputID      :: OutputID
+                     , outputName    :: Text
+                     , outputEnabled :: Bool }
+        deriving (Eq, Show)
 
 

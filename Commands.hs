@@ -6,7 +6,7 @@ module Commands
     ( Command(..)
     , RangeLike
 
-    , stats, status, clearerror, currentsong
+    , stats, status, clearerror, currentsong, idle
     , consume, random, repeat, single
     , crossfade, setvol, next, previous, stop
     , pause, play, playid, seek, seekid 
@@ -15,6 +15,8 @@ module Commands
     , playlistsearch, plchanges, plchangesposid, shuffle, swap, swapid
     , count, find, list, listAlbumsByArtist, listall, listallinfo, lsinfo, search, update
 
+    , close, kill, password, ping
+    , disableoutput, enableoutput, outputs
     ) where
 
 
@@ -86,19 +88,8 @@ status :: Command Status
 status = command0 "status"
 
 
-
--- idleTextMap = map (first pack)
--- 
---     [ ("database"       , IdleDatabase      ) 
---     , ("mixer"          , IdleMixer         ) 
---     , ("options"        , IdleOptions       ) 
---     , ("output"         , IdleOutput        ) 
---     , ("player"         , IdlePlayer        ) 
---     , ("playlist"       , IdlePlaylist      ) 
---     , ("stored_playlist", IdleStoredPlaylist) 
---     , ("update"         , IdleUpdate        ) 
---     ]
-
+idle :: [SubsysChanged] -> Command [SubsysChanged]
+idle = command1 "idle"
 
 
 clearerror :: Command ()
@@ -248,5 +239,49 @@ update :: Maybe URI -> Command JobID
 update = command1opt "update"
 
 -- rescan??
+
+
+commands :: Command [Text]
+commands = command0with "commands" readCommands
+
+-- notcommands :: Command [Text] -- ???
+-- notcommands = command0with "notcommands" readCo
+
+tagtypes :: Command [MetaField]
+tagtypes = command0with "tagtypes" readTagTypes
+
+urlhandlers :: Command [Text]
+urlhandlers = command0with "urlhandlers" readURLHandlers
+
+-- decoders???
+
+
+
+close :: Command ()
+close = command0 "close"
+
+
+kill :: Command ()
+kill = command0 "kill"
+
+
+password :: Text -> Command ()
+password = command1 "password"
+
+
+ping :: Command ()
+ping = command0 "ping"
+
+
+
+disableoutput, enableoutput :: OutputID -> Command ()
+
+disableoutput = command1 "disableoutput"
+
+enableoutput  = command1 "enableoutput"
+
+
+outputs :: Command [Output]
+outputs = command0 "outputs"
 
 
