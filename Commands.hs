@@ -222,8 +222,8 @@ list t = Command (joinParams [pack "list", t]) (readSingleTags t)
 
 listAlbumsByArtist :: Text -> Command [Text]
 listAlbumsByArtist a =
-        Command (joinParams [pack "list", album, encode a]) (readSingleTags album)
-    where album = pack "Album"
+    Command (joinParams [pack "list", pack "Album", encode a])
+            (readSingleTags (pack "Album"))
 
 
 listall :: Maybe URI -> Command [Either Text Text]
