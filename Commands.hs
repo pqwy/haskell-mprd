@@ -1,20 +1,22 @@
+{-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances  #-}
 
 
 module Commands
---     ( Command(..)
---     , RangeLike
--- 
---     , stats, status, clearerror, currentsong
---     , consume, random, repeat, single
---     , crossfade, setvol, next, previous, stop
---     , pause, play, playid, seek, seekid 
---     , add, addid, clear, move, moveid, delete, deleteid
---     , playlistid, playlistidAll, playlistfind, playlistinfo, playlistinfo1
---     , playlistsearch, plchanges, plchangesposid, shuffle, swap, swapid
--- 
---     ) where
-where
+    ( Command(..)
+    , RangeLike
+
+    , stats, status, clearerror, currentsong
+    , consume, random, repeat, single
+    , crossfade, setvol, next, previous, stop
+    , pause, play, playid, seek, seekid 
+    , add, addid, clear, move, moveid, delete, deleteid
+    , playlistid, playlistidAll, playlistfind, playlistinfo, playlistinfo1
+    , playlistsearch, plchanges, plchangesposid, shuffle, swap, swapid
+    , count, find, list, listAlbumsByArtist, listall, listallinfo, lsinfo, search, update
+
+    ) where
+
 
 
 import Core
@@ -32,11 +34,12 @@ import Control.Applicative
 import Data.Text ( Text, pack )
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
+import qualified Data.ByteString.Char8 as B
 
 
 
 
-data Command a = Command Text (Decoder a)
+data Command a = Command ByteString (Decoder a)
 
 
 
@@ -49,26 +52,26 @@ instance RangeLike Range where
 -- command builders {{{
 
 
-command0 :: (Response a) => String -> Command a
+command0 :: (Response a) => ByteString -> Command a
 command0 s = command0with s decode
 
-command1 :: (Parameter a, Response b) => String -> a -> Command b
+command1 :: (Parameter a, Response b) => ByteString -> a -> Command b
 command1 s = command1with s decode
 
-command2 :: (Parameter a, Parameter b, Response c) => String -> a -> b -> Command c
-command2 s a b = Command (joinParams [pack s, encode a, encode b]) decode
+command2 :: (Parameter a, Parameter b, Response c) => ByteString -> a -> b -> Command c
+command2 s a b = Command (joinParams [s, encode a, encode b]) decode
 
-command0with :: String -> Decoder a -> Command a
-command0with s d = Command (pack s) d
+command0with :: ByteString -> Decoder a -> Command a
+command0with s d = Command s d
 
-command1with :: (Parameter a) => String -> Decoder b -> a -> Command b
-command1with s d a = Command (joinParams [pack s, encode a]) d
+command1with :: (Parameter a) => ByteString -> Decoder b -> a -> Command b
+command1with s d a = Command (joinParams [s, encode a]) d
 
-command1optWith :: (Parameter a) => String -> Decoder b -> Maybe a -> Command b
+command1optWith :: (Parameter a) => ByteString -> Decoder b -> Maybe a -> Command b
 command1optWith s d (Just x) = command1with s d x
 command1optWith s d Nothing  = command0with s d
 
-command1opt :: (Parameter a, Response b) => String -> Maybe a -> Command b
+command1opt :: (Parameter a, Response b) => ByteString -> Maybe a -> Command b
 command1opt s = command1optWith s decode
 
 -- }}}
@@ -217,22 +220,22 @@ find = command1 "find"
 
 -- findadd??
 
-list :: Tag -> Command [Text]
-list t = Command (joinParams [pack "list", t]) (readSingleTags t)
+list :: MetaField -> Command [MetaContent]
+list t = Command (joinParams ["list", t]) (readSingleTags t)
 
-listAlbumsByArtist :: Text -> Command [Text]
+listAlbumsByArtist :: MetaContent -> Command [MetaContent]
 listAlbumsByArtist a =
-    Command (joinParams [pack "list", pack "Album", encode a])
-            (readSingleTags (pack "Album"))
+    Command (joinParams ["list", "Album", encode a])
+            (readSingleTags ("Album"))
 
 
-listall :: Maybe URI -> Command [Either Text Text]
+listall :: Maybe URI -> Command [Either URI URI]
 listall = command1optWith "listall" readDirsFiles
 
-listallinfo :: Maybe URI -> Command [Either Text Track]
+listallinfo :: Maybe URI -> Command [Either URI Track]
 listallinfo = command1optWith "listallinfo" readDirsTracks
 
-lsinfo :: Maybe URI -> Command [Either Text Track]
+lsinfo :: Maybe URI -> Command [Either URI Track]
 lsinfo = command1optWith "lsinfo" readDirsTracks
 
 search :: [QueryPred] -> Command [Track]

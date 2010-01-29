@@ -1,10 +1,10 @@
-{-# LANGUAGE TypeSynonymInstances  #-}
+{-# LANGUAGE TypeSynonymInstances, OverloadedStrings  #-}
 
 module Core
-    ( Text
-    , Tag, Tagset, hasTag, mkTagset, tagsetTags
+    ( Text, ByteString
+    , MetaField, MetaContent, Tagset, hasTag, mkTagset, tagsetTags
     , Tags, mkTags, lookupTag, tags
-    , MPDError(..), Result --, mapError
+    , MPDError(..), Result
     , MPDConnState(..), zeroState
     , deftags
     ) where
@@ -12,10 +12,14 @@ module Core
 
 import Control.Monad ( MonadPlus(..) )
 
-import Data.List ( sort )
+import Data.List ( sort, sortBy )
+import Data.Function ( on )
 
 import Data.Text ( Text, pack )
 import qualified Data.Text as T
+import Data.ByteString ( ByteString )
+import qualified Data.ByteString.Char8 as B
+
 import qualified Data.Set as S
 import qualified Data.Map as M
 
@@ -28,7 +32,9 @@ data MPDConnState = MPDConnState
         }
 
 -- zeroState = MPDConnState { mpdConn = undefined , mpdTags = mkTagset [] }
-deftags = map pack
+
+deftags :: [ByteString]
+deftags =
     [ "Artist"   , "Album" , "AlbumArtist"
     , "Title"    , "Track" , "Name"
     , "Genre"    , "Date"  , "Composer"
@@ -51,31 +57,35 @@ data MPDError = DecodeError String (Maybe Text)
 
 
 
-type Tag = Text
+type MetaField = ByteString
+type MetaContent = Text
 
-newtype Tagset = Tagset (S.Set Tag)
+
+newtype Tagset = Tagset (S.Set MetaField)
     deriving (Eq, Show)
+
 
 hasTag (Tagset s) x = x `S.member` s
 
-mkTagset :: [Tag] -> Tagset
+mkTagset :: [MetaField] -> Tagset
 mkTagset = Tagset . S.fromDistinctAscList . sort
 
-tagsetTags :: Tagset -> [Tag]
+tagsetTags :: Tagset -> [MetaField]
 tagsetTags (Tagset s) = S.toAscList s
 
 
 
-newtype Tags = Tags (M.Map Tag Text)
+newtype Tags = Tags (M.Map MetaField MetaContent)
     deriving (Eq, Show)
 
-mkTags :: [(Tag, Text)] -> Tags
-mkTags = Tags . M.fromList -- XXX may be slow, might require pre-sorting
 
-lookupTag :: Tag -> Tags -> Maybe Text
+mkTags :: [(MetaField, MetaContent)] -> Tags
+mkTags = Tags . M.fromAscList . sortBy (compare `on` fst)
+
+lookupTag :: MetaField -> Tags -> Maybe MetaContent
 lookupTag t (Tags m) = M.lookup t m
 
-tags :: Tags -> [(Tag, Text)]
+tags :: Tags -> [(MetaField, MetaContent)]
 tags (Tags m) = M.toAscList m
 
 
@@ -97,9 +107,4 @@ instance MonadPlus Result where
     a `mplus` b = a
     
     mzero = Left (OtherError "mzero!")
-
-
--- mapError :: (a -> b) -> Either a c -> Either b c
--- mapError _ (Right x) = Right x
--- mapError f (Left  x) = Left (f x)
 

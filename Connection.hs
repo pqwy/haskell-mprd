@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings  #-}
+
 module Connection where
 
 
@@ -8,10 +10,8 @@ import Commands
 
 import Control.Monad
 
-import qualified Data.ByteString as B
-
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as TE
+import qualified Data.ByteString.Char8 as B
+import qualified Data.Text as T ( pack )
 
 import System.IO
 import Network
@@ -21,9 +21,6 @@ import Control.Concurrent.MVar
 
 newtype MPDConn = MPDConn (MVar (Either (IO ()) MPDConnState))
 
-
--- either2 :: (a -> c) -> (b -> d) -> Either a b -> Either c d
--- either2 f g = either (Left . f) (Right . g)
 
 
 -- XXX handle some exceptions on this level?
@@ -36,26 +33,25 @@ withConnection (MPDConn c) act = do
 
 
 -- XXX or on this one?
-getLines :: (T.Text -> Bool) -> MPDConn -> IO (Result [T.Text])
+getLines :: (ByteString -> Bool) -> MPDConn -> IO (Result [ByteString])
 getLines p c = withConnection c $ collect . mpdConn
     where
         collect h = do
-            t <- TE.decodeUtf8 `fmap` B.hGetLine h
+            t <- B.hGetLine h
             if p t then (t:) `fmap` collect h else return [t] 
 
 
-getResponseBlock :: MPDConn -> IO (Result [T.Text])
+getResponseBlock :: MPDConn -> IO (Result [ByteString])
 getResponseBlock c =
-    -- getLines ( \t -> not (ok `T.isPrefixOf` t || ack `T.isPrefixOf` t)) c >>= \ls ->
-    getLines ( \t -> not (t == ok || ack `T.isPrefixOf` t)) c >>= \ls ->
+    getLines (not . liftM2 (||) isOK isAck) c >>= \ls ->
         case ls of
-             Right ls | ack `T.isPrefixOf` last ls -> return (Left (OtherError "ack."))
-                      | otherwise                  -> return (return (init ls))
-             Left  e                               -> return (Left e)
+             Right ls | isAck (last ls) -> return (Left (OtherError "ack."))
+                      | otherwise       -> return (return (init ls))
+             Left  e                    -> return (Left e)
 
     where
-        ok  = T.pack "OK"
-        ack = T.pack "ACK "
+        isOK = (== "OK")
+        isAck = B.isPrefixOf "ACK "
 
 
 
@@ -77,8 +73,9 @@ quickRead f (Command _ fn) = do
     (>>= fn zeroState) `fmap` getResponseBlock c
 
 
-quickSend :: T.Text -> MPDConn -> IO (Result ())
-quickSend t c = withConnection c $ \s -> B.hPutStrLn (mpdConn s) (TE.encodeUtf8 t) >> hFlush (mpdConn s)
+quickSend :: ByteString -> MPDConn -> IO (Result ())
+quickSend b c = withConnection c $ \s ->
+    B.hPutStrLn (mpdConn s) b >> hFlush (mpdConn s)
 
 
 quickCmd c@(MPDConn v) (Command t f) = do

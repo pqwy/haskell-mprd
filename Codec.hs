@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE PatternGuards, FlexibleInstances, TypeSynonymInstances  #-}
 
 module Codec
@@ -23,6 +24,7 @@ import Control.Applicative hiding ( Alternative(..), many )
 import Data.Text ( Text, pack, unpack )
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
+import qualified Data.ByteString.Char8 as B
 
 import qualified Data.Map as M
 
@@ -35,12 +37,12 @@ import Text.Parsec.Pos
 
 -- co {{{
 
-class Parameter a where encode :: a -> Text
+class Parameter a where encode :: a -> ByteString
 
 
 instance Parameter Bool where
-    encode True  = pack "1"
-    encode False = pack "0"
+    encode True  = "1"
+    encode False = "0"
     
 instance Parameter Int where encode = simpleEncode
 
@@ -48,36 +50,37 @@ instance Parameter TrackID where encode (TID x) = encode x
 
 instance Parameter PlaylistVersion where encode (PLV x) = encode x
 
+instance Parameter Text where
+    encode = E.encodeUtf8 . quotes
+
 instance Parameter Range where
-    encode (a :/: b) = T.intercalate (pack ":") [encode a, encode b]
+    encode (a :/: b) = B.intercalate ":" [encode a, encode b]
 
 instance Parameter URI where
-    encode (URI u) = quotes u
+    encode (URI u) = encode u
 
 instance Parameter QueryPred where
-    encode (t, v) = joinParams [t, quotes v]
+    encode (t, v) = joinParams [t, encode v]
 
 instance Parameter [QueryPred] where
-    encode tvs = joinParams [ p | (t, v) <- tvs, p <- [t, quotes v] ]
-
-instance Parameter Text where
-    encode = quotes
+    encode = joinParams . map encode
 
 
-joinParams :: [Text] -> Text
-joinParams = T.intercalate (pack " ")
+
+joinParams :: [ByteString] -> ByteString
+joinParams = B.intercalate " "
 
 quotes :: Text -> Text
 quotes = T.cons '"' . (`T.snoc` '"')
 
-simpleEncode :: (Show a) => a -> Text
-simpleEncode = pack . show
+simpleEncode :: (Show a) => a -> ByteString
+simpleEncode = B.pack . show
 
 -- }}}
 
 -- dec {{{
 
-type Decoder a = MPDConnState -> [Text] -> Result a
+type Decoder a = MPDConnState -> [ByteString] -> Result a
 
 
 class Response a where decode :: Decoder a
@@ -111,7 +114,7 @@ instance Response JobID where
 
 
 
-type Parser = Parsec [Text] (Maybe Text)
+type Parser = Parsec [ByteString] (Maybe ByteString)
 
 
 
@@ -130,56 +133,60 @@ asDecoder' = asDecoder . const
 posNextLine s _ _ = incSourceLine s 1
 
 
-satisfyLn :: (Text -> Bool) -> Parser Text
+satisfyLn :: (ByteString -> Bool) -> Parser ByteString
 satisfyLn p = tokenPrim show posNextLine $
                 \l -> if p l then Just l else Nothing
 
-line :: Parser Text
+line :: Parser ByteString
 line = satisfyLn (const True) <?> "a line of input"
 
 
 
-lineKV :: Parser (Text, Text)
+lineKV :: Parser (ByteString, ByteString)
 lineKV = tokenPrim show posNextLine splitKeyValue
                 <?> "'key: val' line"
 
-satisfyKey :: (Text -> Bool) -> Parser (Text, Text)
+
+satisfyKey :: (ByteString -> Bool) -> Parser (ByteString, ByteString)
 satisfyKey p = try ( lineKV >>= \x@(k, v) ->
                         if p k then return x else mzero )
                 <?> "some key..."
 
-textKey :: Text -> Parser Text
-textKey x = (fmap snd . satisfyKey . (==)) x <?> ( "key '" ++ unpack x ++ "'" )
 
-key :: String -> Parser Text
-key s = ( textKey . pack ) s <?> ( "key '" ++ s ++ "'" )
+key :: ByteString -> Parser ByteString
+key x = (fmap snd . satisfyKey . (==)) x
+            <?> ( "key '" ++ B.unpack x ++ "'" )
 
 
-splitKeyValue :: Text -> Maybe (Text, Text)
-splitKeyValue t | (k, v) <- split t, T.length v > 2 = Just (k, 2 `T.drop` v)
+splitKeyValue :: ByteString -> Maybe (ByteString, ByteString)
+splitKeyValue t | (k, v) <- split t, B.length v > 2 = Just (k, 2 `B.drop` v)
                 | otherwise                         = Nothing
     where
-        split = T.break (pack ": ")
+        split = B.breakSubstring ": " -- <- B.break?
 
 
 
 
-readInt :: Text -> Parser Int
-readInt t = case reads (unfoldr T.uncons t) of
-                 [(x, [])] -> return x
-                 _         -> unexpected (show t)
+-- readInt :: Text -> Parser Int
+-- readInt t = case reads (unfoldr T.uncons t) of
+--                  [(x, [])] -> return x
+--                  _         -> unexpected (show t)
+readInt :: ByteString -> Parser Int
+readInt t = case B.readInt t of
+                 Just (a, b) | B.null b -> return a
+                 _                      -> unexpected (B.unpack t)
 
 
-readBool :: Text -> Parser Bool
+readBool :: ByteString -> Parser Bool
 readBool = fmap (/= 0) . readInt
 
 
 
-readColonList :: Text -> Parser [Text]
-readColonList = return . T.split (pack ":")
+readColonList :: ByteString -> Parser [ByteString]
+readColonList = return . B.split ':'
 
 
-readNTuple :: Int -> Text -> Parser [Text]
+readNTuple :: Int -> ByteString -> Parser [ByteString]
 readNTuple n = readColonList >=> \l ->
     if length l == n then return l
                      else fail (show n ++ "-place list")
@@ -189,7 +196,16 @@ readInts x = readNTuple x >=> mapM readInt
 
 
 
-assocTypeLax :: a -> (M.Map Text (Text -> Parser (a -> a))) -> Parser a
+fileField :: Parser URI
+fileField = (URI . E.decodeUtf8) <$> key "file"
+
+
+dirField :: Parser URI
+dirField = (URI . E.decodeUtf8) <$> key "directory"
+
+
+
+assocTypeLax :: a -> (M.Map ByteString (ByteString -> Parser (a -> a))) -> Parser a
 assocTypeLax zero decoders = loop zero
     where
         loop a = ( lineKV >>= \(k, v) ->
@@ -199,17 +215,16 @@ assocTypeLax zero decoders = loop zero
                  <|> pure a
 
 
-assocTypeLax' :: a -> [(String, Text -> Parser (a -> a))] -> Parser a
+assocTypeLax' :: a -> [(ByteString, ByteString -> Parser (a -> a))] -> Parser a
 assocTypeLax' zero =
             assocTypeLax zero
             . M.fromDistinctAscList
-            . map (\(a, b) -> (pack a, b))
             . sortBy (compare `on` fst)
 
 
 readTrack :: Tagset -> Parser Track
 readTrack tags =
-    mkTrack <$> key "file"
+    mkTrack <$> fileField
             <*> ((Just <$> (key "Time" >>= readInt)) <|> pure Nothing)
             <*> readTags tags
 
@@ -221,13 +236,13 @@ readTrack tags =
 readTags :: Tagset -> Parser Tags
 readTags ts = loop []
     where
-        loop acc = (satisfyKey tagKey >>= loop . (: acc))
+        loop acc = ( satisfyKey tagKey >>= \(k, v) ->
+                        loop ((k, E.decodeUtf8 v) : acc) )
                <|> pure (mkTags acc)
 
         tagKey = hasTag ts
 
-        -- tagKey = not . ( `elem` map T.pack
-        --         ["file", "directory", "Pos", "Id"] )
+        -- tagKey = not . ( `elem` ["file", "directory", "Pos", "Id"] )
 
 
 infixl 4 <$$>
@@ -238,6 +253,7 @@ infixl 4 <$$>
 
 readTID :: Parser TrackID
 readTID = key "Id" >>= TID <$$> readInt
+
 
 readJID :: Parser JobID
 readJID = key "updating_db" >>= JID <$$> readInt
@@ -305,10 +321,10 @@ readStatus = assocTypeLax' zeroStatus
 
 readVol = (\x -> if x < 0 then Nothing else Just x) <$$> readInt
 
-readPlayState x | x == pack "play"  = return StatePlay
-                | x == pack "stop"  = return StateStop
-                | x == pack "pause" = return StatePause
-                | otherwise         = unexpected (unpack x)
+readPlayState x | x == "play"  = return StatePlay
+                | x == "stop"  = return StateStop
+                | x == "pause" = return StatePause
+                | otherwise    = unexpected (B.unpack x)
 
 
 readPosIDs :: Decoder [(PlaylistPos, TrackID)]
@@ -322,19 +338,22 @@ readSongsPltime = asDecoder' $
             <*> (key "playtime" >>= readInt)
 
 
-readSingleTags :: Text -> Decoder [Text]
-readSingleTags = asDecoder' . many . textKey
+readSingleTags :: ByteString -> Decoder [Text]
+readSingleTags = asDecoder' . many . (fmap E.decodeUtf8) . key
 
 
 
-readDirsFiles :: Decoder [Either Text Text]
+readDirsFiles :: Decoder [Either URI URI]
 readDirsFiles = asDecoder' $
-    many ( Left  <$> key "directory" <|> Right <$> key "file" )
+    many ( Left  <$> dirField <|> Right <$> fileField )
 
 
-readDirsTracks :: Decoder [Either Text Track]
+readDirsTracks :: Decoder [Either URI Track]
 readDirsTracks = asDecoder $ \ts ->
-        many ( Left <$> key "directory" <|> (Right <$> readTrack (mpdTags ts)))
+        many ( Left <$> dirField
+          <|> (Right <$> readTrack (mpdTags ts)))
+
+
 
 -- }}}
 

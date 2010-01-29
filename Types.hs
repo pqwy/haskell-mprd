@@ -3,22 +3,19 @@
 module Types where
 
 
-
 import Core
-
-
-import Data.Text ( Text )
 
 
 newtype URI = URI Text
     deriving (Eq, Show)
 
-type QueryPred = (Tag, Text)
+type QueryPred = (MetaField, MetaContent)
 
 
 type Seconds = Int
 
 type PlaylistPos = Int
+
 
 newtype PlaylistVersion = PLV Int
     deriving (Eq, Ord, Show)
@@ -28,6 +25,7 @@ newtype TrackID = TID Int
 
 newtype JobID = JID Int
     deriving (Eq, Show)
+
 
 data Stats = Stats { stsArtists, stsAlbums,   stsSongs
                    , stsUptime,  stsPlaytime, stsDbPlaytime :: Int
@@ -93,7 +91,7 @@ data PlayState = StatePlay | StateStop | StatePause
 
 
 data Track = Track
-    { trackFile :: Text
+    { trackFile :: URI
     , trackTime :: Maybe Seconds
     , trackTags :: Tags
     } deriving (Eq, Show)
