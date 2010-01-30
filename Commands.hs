@@ -6,7 +6,7 @@ module Commands
     ( Command(..)
     , RangeLike
 
-    , stats, status, clearerror, currentsong, idle
+    , stats, status, clearerror, currentsong, unsafeIdle
 
     , consume, random, repeat, single
     , crossfade, setvol, next, previous, stop
@@ -35,7 +35,7 @@ import Types
 import Codec
 
 
-import Prelude hiding ( readList, repeat )
+import Prelude hiding ( repeat )
 
 
 import Control.Monad
@@ -102,8 +102,8 @@ status :: Command Status
 status = command0 "status"
 
 
-idle :: [SubsysChanged] -> Command [SubsysChanged]
-idle = command1 "idle"
+unsafeIdle :: [SubsysChanged] -> Command [SubsysChanged]
+unsafeIdle = command1 "idle"
 
 
 clearerror :: Command ()
@@ -127,7 +127,7 @@ crossfade, setvol :: Int -> Command ()
 crossfade = command1 "crossfade"
 
 setvol x | x >= 0 && x <= 100 = command1 "setvol" x
-         | otherwise = error $ "setvol: allowed range 0-100, got " ++ show x
+         | otherwise = error ("setvol: allowed range 0-100, got " ++ show x)
 
 
 next, previous, stop :: Command ()
@@ -201,7 +201,7 @@ plchanges = command1 "plchanges"
 
 
 plchangesposid :: PlaylistVersion -> Command [(PlaylistPos, TrackID)]
-plchangesposid = command1with "plchangesposid" readPosIDs
+plchangesposid = command1with "plchangesposid" decodePosIDs
 
 
 shuffle :: Maybe Range -> Command ()
@@ -217,7 +217,7 @@ swapid = command2 "swap"
 
 
 count :: [QueryPred] -> Command (Int, Seconds)
-count = command1with "count" readSongsPltime
+count = command1with "count" decodeSongsPltime
 
 
 find :: [QueryPred] -> Command [Track]
@@ -226,22 +226,22 @@ find = command1 "find"
 -- findadd??
 
 list :: MetaField -> Command [MetaContent]
-list t = Command (joinParams ["list", t]) (readSingleTags t)
+list t = Command (joinParams ["list", t]) (decodeSingleTags t)
 
 listAlbumsByArtist :: MetaContent -> Command [MetaContent]
 listAlbumsByArtist a =
     Command (joinParams ["list", "Album", encode a])
-            (readSingleTags ("Album"))
+            (decodeSingleTags ("Album"))
 
 
 listall :: Maybe URI -> Command [Either URI URI]
-listall = command1optWith "listall" readDirsFiles
+listall = command1optWith "listall" decodeDirsFiles
 
 listallinfo :: Maybe URI -> Command [Either URI Track]
-listallinfo = command1optWith "listallinfo" readDirsTracks
+listallinfo = command1optWith "listallinfo" decodeDirsTracks
 
 lsinfo :: Maybe URI -> Command [Either URI Track]
-lsinfo = command1optWith "lsinfo" readDirsTracks
+lsinfo = command1optWith "lsinfo" decodeDirsTracks
 
 search :: [QueryPred] -> Command [Track]
 search = command1 "search"
@@ -256,7 +256,7 @@ update = command1opt "update"
 
 
 listplaylist :: Playlist -> Command [URI]
-listplaylist = command1with "listplaylist" readURIs
+listplaylist = command1with "listplaylist" decodeURIs
 
 
 listplaylistinfo :: Playlist -> Command [Track]
@@ -264,7 +264,7 @@ listplaylistinfo = command1 "listplaylistinfo"
 
 
 listplaylists :: Command [(Playlist, Text)]
-listplaylists = command0with "listplaylists" readPlaylists
+listplaylists = command0with "listplaylists" decodePlaylists
 
 
 load :: Playlist -> Command ()
@@ -295,16 +295,16 @@ save = command0 "save"
 
 
 commands :: Command [Text]
-commands = command0with "commands" readCommands
+commands = command0with "commands" decodeCommands
 
 -- notcommands :: Command [Text] -- ???
--- notcommands = command0with "notcommands" readCo
+-- notcommands = command0with "notcommands" decodeCo
 
 tagtypes :: Command [MetaField]
-tagtypes = command0with "tagtypes" readTagTypes
+tagtypes = command0with "tagtypes" decodeTagTypes
 
 urlhandlers :: Command [Text]
-urlhandlers = command0with "urlhandlers" readURLHandlers
+urlhandlers = command0with "urlhandlers" decodeURLHandlers
 
 -- decoders???
 
@@ -336,5 +336,6 @@ enableoutput  = command1 "enableoutput"
 
 outputs :: Command [Output]
 outputs = command0 "outputs"
+
 
 

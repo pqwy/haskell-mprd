@@ -4,16 +4,14 @@
 module Codec
     ( Decoder, Parameter(..), Response(..)
     , joinParams
-    , readPosIDs, readSongsPltime, readSingleTags, readDirsFiles, readDirsTracks
-    , readTagTypes, readURLHandlers, readCommands, readURIs, readPlaylists
+    , decodePosIDs, decodeSongsPltime, decodeSingleTags, decodeDirsFiles, decodeDirsTracks
+    , decodeTagTypes, decodeURLHandlers, decodeCommands, decodeURIs, decodePlaylists
+    , isAck, isOK, isListOK
     ) where
 
 
 import Core
 import Types
-
-
-import Prelude hiding ( readList )
 
 
 import Data.List ( unfoldr, sortBy )
@@ -99,45 +97,90 @@ class Response a where decode :: Decoder a
 instance Response () where decode _ _ = return ()
 
 instance Response Stats where
-    decode = asDecoder' readStats
+    decode = asDecoder' parseStats
 
 instance Response Status where
-    decode = asDecoder' readStatus
+    decode = asDecoder' parseStatus
 
 instance Response [SubsysChanged] where
-    decode = asDecoder' readChangedSubsys
+    decode = asDecoder' parseChangedSubsys
 
 instance Response Track where
-    decode = asDecoder (readTrack . mpdTags)
+    decode = asDecoder (parseTrack . mpdTags)
 
 instance Response [Track] where
-    decode = asDecoder (readTracks . mpdTags)
+    decode = asDecoder (parseTracks . mpdTags)
 
 instance Response PlaylistTrack where
-    decode = asDecoder (readPLTrack . mpdTags)
+    decode = asDecoder (parsePLTrack . mpdTags)
 
 instance Response [PlaylistTrack] where
-    decode = asDecoder (readPLTracks . mpdTags)
+    decode = asDecoder (parsePLTracks . mpdTags)
 
 instance Response TrackID where
-    decode = asDecoder' readTID
+    decode = asDecoder' (key "Id")
 
 instance Response JobID where
-    decode = asDecoder' readJID
+    decode = asDecoder' (key "updating_db")
 
 instance Response [Output] where
-    decode = asDecoder' readOutputs
+    decode = asDecoder' parseOutputs
 
 
 
-type Parser = Parsec [ByteString] (Maybe ByteString)
+
+type Parser = Parsec [ByteString] ()
+
+
+
+class Payload a where payload :: ByteString -> Parser a
+
+instance Payload ByteString where payload = return
+
+instance Payload Text where payload = return . E.decodeUtf8
+
+instance Payload Int where
+    payload b =
+        case B.readInt b of
+             Just (a, b) | B.null b -> return a
+             _                      -> unexpected (B.unpack b)
+
+instance Payload Bool where
+    payload = fmap (/= 0) . (payload :: ByteString -> Parser Int)
+
+instance (Payload a) => Payload [a] where payload = mapM payload . B.split ':'
+
+instance Payload TrackID where payload = TID <$$> payload
+
+instance Payload JobID where payload = JID <$$> payload
+
+instance Payload OutputID where payload = OutputID <$$> payload
+
+instance Payload Playlist where payload = Playlist <$$> payload
+
+instance Payload PlayState where
+    payload x | x == "play"  = return StatePlay
+              | x == "stop"  = return StateStop
+              | x == "pause" = return StatePause
+              | otherwise    = unexpected (B.unpack x)
+
+instance Payload URI where payload = URI <$$> payload
+
+instance Payload SubsysChanged where payload = parseChangedSubsys1
+
+
+
+infixl 4 <$$>
+(<$$>) :: (Functor f) => (a -> b) -> (c -> f a) -> c -> f b
+(<$$>) = (.) . fmap
 
 
 
 asDecoder :: (MPDConnState -> Parser a) -> Decoder a
 asDecoder p cn tx =
     either (Left . DecodeError2 . sourceLine . errorPos) Right
-           (runParser (p cn) Nothing "<input>" tx)
+           (parse (p cn) "<input>" tx)
+           -- (runParser (p cn) Nothing "<input>" tx)
 
 
 asDecoder' :: Parser a -> Decoder a
@@ -150,12 +193,18 @@ posNextLine s _ _ = incSourceLine s 1
 
 
 satisfyLn :: (ByteString -> Bool) -> Parser ByteString
-satisfyLn p = tokenPrim show posNextLine $
-                \l -> if p l then Just l else Nothing
+satisfyLn p = tokenPrim show posNextLine
+                ( \l -> if p l then Just l else Nothing )
 
 line :: Parser ByteString
 line = satisfyLn (const True) <?> "a line of input"
 
+
+splitKeyValue :: ByteString -> Maybe (ByteString, ByteString)
+splitKeyValue t | (k, v) <- split t, B.length v > 2 = Just (k, 2 `B.drop` v)
+                | otherwise                         = Nothing
+    where
+        split = B.breakSubstring ": " -- <- B.break?
 
 
 lineKV :: Parser (ByteString, ByteString)
@@ -169,55 +218,124 @@ satisfyKey p = try ( lineKV >>= \x@(k, v) ->
                 <?> "some key..."
 
 
-key :: ByteString -> Parser ByteString
-key x = snd <$> satisfyKey (== x)
-            <?> ( "key '" ++ B.unpack x ++ "'" )
+key :: (Payload a) => ByteString -> Parser a
+key x = satisfyKey (== x) >>= payload . snd
+                <?> ( "key '" ++ B.unpack x ++ "'" )
 
 
-splitKeyValue :: ByteString -> Maybe (ByteString, ByteString)
-splitKeyValue t | (k, v) <- split t, B.length v > 2 = Just (k, 2 `B.drop` v)
-                | otherwise                         = Nothing
+
+
+parseNTuple :: (Payload a) => Int -> ByteString -> Parser [a]
+parseNTuple n = payload >=> checkListLen n
+
+
+checkListLen :: Int -> [a] -> Parser [a]
+checkListLen n l | length l == n = return l
+                 | otherwise     = fail (show n ++ "-place list")
+
+
+
+
+parseTrack :: Tagset -> Parser Track
+parseTrack tags =
+    mkTrack <$> key "file"
+            <*> ((Just <$> key "Time") <|> pure Nothing)
+            <*> parseTags tags
+
     where
-        split = B.breakSubstring ": " -- <- B.break?
+        mkTrack f tm tg =
+            zeroTrack { trackFile = f, trackTime = tm, trackTags = tg } 
+    
+
+parseTags :: Tagset -> Parser Tags
+parseTags ts = loop []
+    where
+        loop acc = ( satisfyKey tagKey >>= \(k, v) ->
+                        loop ((k, E.decodeUtf8 v) : acc) )
+               <|> pure (mkTags acc)
+
+        tagKey = hasTag ts
+        -- tagKey = not . ( `elem` ["file", "directory", "Pos", "Id"] )
 
 
 
-readInt :: ByteString -> Parser Int
-readInt t = case B.readInt t of
-                 Just (a, b) | B.null b -> return a
-                 _                      -> unexpected (B.unpack t)
+
+parsePLTrack :: Tagset -> Parser PlaylistTrack
+parsePLTrack ts =
+    mkPLT <$> parseTrack ts
+          <*> key "Pos"
+          <*> key "Id"
+
+    where
+        mkPLT trk pos id =
+            PlaylistTrack { plTrack = trk, plTrackPos = pos, plTrackId = id }
 
 
-readBool :: ByteString -> Parser Bool
-readBool = fmap (/= 0) . readInt
+parseTracks :: Tagset -> Parser [Track]
+parseTracks ts = many (parseTrack ts)
 
-
-
-readColonList :: ByteString -> Parser [ByteString]
-readColonList = return . B.split ':'
-
-
-readNTuple :: Int -> ByteString -> Parser [ByteString]
-readNTuple n = readColonList >=> \l ->
-    if length l == n then return l
-                     else fail (show n ++ "-place list")
-
-
-readInts x = readNTuple x >=> mapM readInt
+parsePLTracks :: Tagset -> Parser [PlaylistTrack]
+parsePLTracks ts = many (parsePLTrack ts)
 
 
 
-fileField :: Parser URI
-fileField = (URI . E.decodeUtf8) <$> key "file"
+decodePosIDs :: Decoder [(PlaylistPos, TrackID)]
+decodePosIDs = asDecoder' $
+        many ( (,) <$> key "cpos" <*> key "Id" )
 
 
-dirField :: Parser URI
-dirField = (URI . E.decodeUtf8) <$> key "directory"
+decodeSongsPltime :: Decoder (Int, Seconds)
+decodeSongsPltime = asDecoder' ( (,) <$> key "songs" <*> key "playtime" )
+
+
+decodeSingleTags :: ByteString -> Decoder [Text]
+decodeSingleTags = asDecoder' . many . key
+
+
+decodeURIs :: Decoder [URI]
+decodeURIs = asDecoder' ( many (key "file") )
+
+
+decodeDirsFiles :: Decoder [Either URI URI]
+decodeDirsFiles = asDecoder' $
+    many (   Left  <$> key "directory"
+         <|> Right <$> key "file" )
+
+
+decodeDirsTracks :: Decoder [Either URI Track]
+decodeDirsTracks = asDecoder $ \ts ->
+        many (   Left  <$> key "directory"
+             <|> Right <$> parseTrack (mpdTags ts))
+
+
+parseOutputs :: Parser [Output]
+parseOutputs = many
+        ( mkOut <$> key "outputid"
+                <*> key "outputname"
+                <*> key "outputenabled" )
+    where
+        mkOut k n e = Output { outputID = k, outputName = n, outputEnabled = e }
+
+
+decodeTagTypes :: Decoder [MetaField]
+decodeTagTypes = asDecoder' ( many ( key "tagtype" ) )
+
+decodeURLHandlers :: Decoder [Text]
+decodeURLHandlers = asDecoder' ( many (key "handler") )
+
+decodeCommands :: Decoder [Text]
+decodeCommands = asDecoder' ( many (key "command") )
+
+
+decodePlaylists :: Decoder [(Playlist, Text)]
+decodePlaylists = asDecoder' $
+        many ( (,) <$> key "playlist"
+                   <*> key "Last-Modified" )
 
 
 
-assocTypeLax :: a -> (M.Map ByteString (ByteString -> Parser (a -> a))) -> Parser a
-assocTypeLax zero decoders = loop zero
+buildByMapLax :: a -> (M.Map ByteString (ByteString -> Parser (a -> a))) -> Parser a
+buildByMapLax zero decoders = loop zero
     where
         loop a = ( lineKV >>= \(k, v) ->
                         -- maybe (pure a) (<*> pure a)
@@ -226,103 +344,48 @@ assocTypeLax zero decoders = loop zero
                  <|> pure a
 
 
-assocTypeLax' :: a -> [(ByteString, ByteString -> Parser (a -> a))] -> Parser a
-assocTypeLax' zero =
-            assocTypeLax zero
+assocTypeLax :: a -> [(ByteString, ByteString -> Parser (a -> a))] -> Parser a
+assocTypeLax zero =
+            buildByMapLax zero
             . M.fromDistinctAscList
             . sortBy (compare `on` fst)
 
 
-readTrack :: Tagset -> Parser Track
-readTrack tags =
-    mkTrack <$> fileField
-            <*> ((Just <$> (key "Time" >>= readInt)) <|> pure Nothing)
-            <*> readTags tags
 
-    where
-        mkTrack f tm tg =
-            zeroTrack { trackFile = f, trackTime = tm, trackTags = tg } 
-    
+parseStats :: Parser Stats
+parseStats = assocTypeLax zeroStats 
 
-readTags :: Tagset -> Parser Tags
-readTags ts = loop []
-    where
-        loop acc = ( satisfyKey tagKey >>= \(k, v) ->
-                        loop ((k, E.decodeUtf8 v) : acc) )
-               <|> pure (mkTags acc)
-
-        tagKey = hasTag ts
-
-        -- tagKey = not . ( `elem` ["file", "directory", "Pos", "Id"] )
-
-
-infixl 4 <$$>
-(<$$>) :: (Functor f) => (a -> b) -> (c -> f a) -> c -> f b
-(<$$>) = (.) . fmap
-
-
-
-readTID :: Parser TrackID
-readTID = key "Id" >>= TID <$$> readInt
-
-
-readJID :: Parser JobID
-readJID = key "updating_db" >>= JID <$$> readInt
-
-
-readPLTrack :: Tagset -> Parser PlaylistTrack
-readPLTrack ts =
-    mkPLT <$> readTrack ts
-          <*> (key "Pos" >>= readInt)
-          <*> readTID
-
-    where
-        mkPLT trk pos id =
-            PlaylistTrack { plTrack = trk, plTrackPos = pos, plTrackId = id }
-
-
-readTracks :: Tagset -> Parser [Track]
-readTracks ts = many (readTrack ts)
-
-readPLTracks :: Tagset -> Parser [PlaylistTrack]
-readPLTracks ts = many (readPLTrack ts)
-
-
-
-readStats :: Parser Stats
-readStats = assocTypeLax' zeroStats
-
-    [ ("artists"    , (\x s -> s { stsArtists    = x}) <$$> readInt)
-    , ("albums"     , (\x s -> s { stsAlbums     = x}) <$$> readInt)
-    , ("songs"      , (\x s -> s { stsSongs      = x}) <$$> readInt)
-    , ("uptime"     , (\x s -> s { stsUptime     = x}) <$$> readInt)
-    , ("playtime"   , (\x s -> s { stsPlaytime   = x}) <$$> readInt)
-    , ("db_playtime", (\x s -> s { stsDbPlaytime = x}) <$$> readInt)
-    , ("db_update"  , (\x s -> s { stsDbUpdate   = x}) <$$> readInt)
+    [ ("artists"    , (\x s -> s { stsArtists    = x}) <$$> payload)
+    , ("albums"     , (\x s -> s { stsAlbums     = x}) <$$> payload)
+    , ("songs"      , (\x s -> s { stsSongs      = x}) <$$> payload)
+    , ("uptime"     , (\x s -> s { stsUptime     = x}) <$$> payload)
+    , ("playtime"   , (\x s -> s { stsPlaytime   = x}) <$$> payload)
+    , ("db_playtime", (\x s -> s { stsDbPlaytime = x}) <$$> payload)
+    , ("db_update"  , (\x s -> s { stsDbUpdate   = x}) <$$> payload)
     ]
 
 
 
-readStatus :: Parser Status
-readStatus = assocTypeLax' zeroStatus
+parseStatus :: Parser Status
+parseStatus = assocTypeLax zeroStatus
 
-    [ ("volume"        , (\x s -> s { stVolume         = x            }) <$$> readVol        )
-    , ("repeat"        , (\x s -> s { stRepeat         = x            }) <$$> readBool       )
-    , ("random"        , (\x s -> s { stRandom         = x            }) <$$> readBool       )
-    , ("single"        , (\x s -> s { stSingle         = x            }) <$$> readBool       )
-    , ("consume"       , (\x s -> s { stConsume        = x            }) <$$> readBool       )
-    , ("playlist"      , (\x s -> s { stPlaylist       = PLV x        }) <$$> readInt        )
-    , ("playlistlength", (\x s -> s { stPlaylistLength = x            }) <$$> readInt        )
-    , ("xfade"         , (\x s -> s { stXfade          = x            }) <$$> readInt        )
-    , ("state"         , (\x s -> s { stState          = x            }) <$$> readPlayState  )
-    , ("song"          , (\x s -> s { stSong           = x            }) <$$> readInt        )
-    , ("songid"        , (\x s -> s { stSongId         = TID x        }) <$$> readInt        )
-    , ("bitrate"       , (\x s -> s { stBitrate        = x            }) <$$> readInt        )
-    , ("nextsong"      , (\x s -> s { stNextsong       = x            }) <$$> readInt        )
-    , ("nextsongid"    , (\x s -> s { stNextsongId     = TID x        }) <$$> readInt        )
-    , ("updating_db"   , (\x s -> s { stUpdatingDB     = Just (JID x) }) <$$> readInt        )
-    , ("time"     , (\[a, b] s -> s { stTime           = (a, b)       }) <$$> readInts 2     )
-    , ("audio" , (\[a, b, c] s -> s { stAudio          = (a, b, c)    }) <$$> readInts 3     )
+    [ ("volume"        , (\x s -> s { stVolume         = x            }) <$$> plVol    )
+    , ("repeat"        , (\x s -> s { stRepeat         = x            }) <$$> payload  )
+    , ("random"        , (\x s -> s { stRandom         = x            }) <$$> payload  )
+    , ("single"        , (\x s -> s { stSingle         = x            }) <$$> payload  )
+    , ("consume"       , (\x s -> s { stConsume        = x            }) <$$> payload  )
+    , ("playlist"      , (\x s -> s { stPlaylist       = PLV x        }) <$$> payload  )
+    , ("playlistlength", (\x s -> s { stPlaylistLength = x            }) <$$> payload  )
+    , ("xfade"         , (\x s -> s { stXfade          = x            }) <$$> payload  )
+    , ("state"         , (\x s -> s { stState          = x            }) <$$> payload  )
+    , ("song"          , (\x s -> s { stSong           = x            }) <$$> payload  )
+    , ("songid"        , (\x s -> s { stSongId         = TID x        }) <$$> payload  )
+    , ("bitrate"       , (\x s -> s { stBitrate        = x            }) <$$> payload  )
+    , ("nextsong"      , (\x s -> s { stNextsong       = x            }) <$$> payload  )
+    , ("nextsongid"    , (\x s -> s { stNextsongId     = TID x        }) <$$> payload  )
+    , ("updating_db"   , (\x s -> s { stUpdatingDB     = Just (JID x) }) <$$> payload  )
+    , ("time"     , (\[a, b] s -> s { stTime           = (a, b)       }) <$$> parseNTuple 2 )
+    , ("audio" , (\[a, b, c] s -> s { stAudio          = (a, b, c)    }) <$$> parseNTuple 3 )
 
 --      elapsed: [3] Total time elapsed within the current song, but with higher resolution.
 --      error: if there is an error, returns message here 
@@ -330,69 +393,9 @@ readStatus = assocTypeLax' zeroStatus
      ]
 
 
-readVol = (\x -> if x < 0 then Nothing else Just x) <$$> readInt
+plVol :: ByteString -> Parser (Maybe Int)
+plVol = (\x -> if x < 0 then Nothing else Just x) <$$> payload
 
-readPlayState x | x == "play"  = return StatePlay
-                | x == "stop"  = return StateStop
-                | x == "pause" = return StatePause
-                | otherwise    = unexpected (B.unpack x)
-
-
-readPosIDs :: Decoder [(PlaylistPos, TrackID)]
-readPosIDs = asDecoder' $
-        many ( (,) <$> (key "cpos" >>= readInt) <*> readTID )
-
-
-readSongsPltime :: Decoder (Int, Seconds)
-readSongsPltime = asDecoder' $
-        (,) <$> (key "songs" >>= readInt)
-            <*> (key "playtime" >>= readInt)
-
-
-readSingleTags :: ByteString -> Decoder [Text]
-readSingleTags = asDecoder' . many . (fmap E.decodeUtf8) . key
-
-
-readURIs :: Decoder [URI]
-readURIs = asDecoder' (many fileField)
-
-
-readDirsFiles :: Decoder [Either URI URI]
-readDirsFiles = asDecoder' $
-    many ( Left <$> dirField <|> Right <$> fileField )
-
-
-readDirsTracks :: Decoder [Either URI Track]
-readDirsTracks = asDecoder $ \ts ->
-        many ( Left <$> dirField
-          <|> (Right <$> readTrack (mpdTags ts)))
-
-
-readOutputs :: Parser [Output]
-readOutputs = many
-        ( mkOut <$> (OutputID <$> (key "outputid" >>= readInt))
-                <*> (E.decodeUtf8 <$> key "outputname")
-                <*> (key "outputenabled" >>= readBool) )
-    where
-        mkOut k n e = Output { outputID = k, outputName = n, outputEnabled = e }
-
-
-readTagTypes :: Decoder [MetaField]
-readTagTypes = asDecoder' $ many ( key "tagtype" )
-
-readURLHandlers :: Decoder [Text]
-readURLHandlers = asDecoder' $
-        many (E.decodeUtf8 <$> key "handler")
-
-readCommands :: Decoder [Text]
-readCommands = asDecoder' $
-        many (E.decodeUtf8 <$> key "command")
-
-
-readPlaylists :: Decoder [(Playlist, Text)]
-readPlaylists = asDecoder' $
-        many ( (,) <$> ((Playlist . E.decodeUtf8) <$> key "playlist")
-                   <*> (E.decodeUtf8 <$> key "Last-Modified") )
 
 
 coDecMap :: (Ord a)
@@ -416,8 +419,7 @@ coDecMap m = ( \b -> case b `M.lookup` M.fromAscList (sort m) of
         swap = map (\(a, b) -> (b, a))
 
 
-
-( readChangedSubsys1, encodeChangedSubsys ) = coDecMap
+( parseChangedSubsys1, encodeChangedSubsys ) = coDecMap
 
         [ ("database"       , ChangedDatabase      ) 
         , ("mixer"          , ChangedMixer         ) 
@@ -429,7 +431,18 @@ coDecMap m = ( \b -> case b `M.lookup` M.fromAscList (sort m) of
         , ("update"         , ChangedUpdate        ) 
         ]
 
-readChangedSubsys = many ( key "changed" >>= readChangedSubsys1 )
+parseChangedSubsys = many ( key "changed" )
+
+
+
+
+
+
+isOK, isAck, isListOK :: ByteString -> Bool
+isOK     = ( == "OK" )
+isAck    = ( "ACK " `B.isPrefixOf` )
+isListOK = ( == "list_OK" )
+
 
 
 -- }}}
