@@ -7,17 +7,26 @@ module Commands
     , RangeLike
 
     , stats, status, clearerror, currentsong, idle
+
     , consume, random, repeat, single
     , crossfade, setvol, next, previous, stop
     , pause, play, playid, seek, seekid 
+
     , add, addid, clear, move, moveid, delete, deleteid
+
     , playlistid, playlistidAll, playlistfind, playlistinfo, playlistinfo1
     , playlistsearch, plchanges, plchangesposid, shuffle, swap, swapid
+
     , count, find, list, listAlbumsByArtist, listall, listallinfo, lsinfo, search, update
 
+    , listplaylists, listplaylist, listplaylistinfo, load, playlistadd
+    , playlistclear, playlistdelete, playlistmove, rename, rm, save
+
     , close, kill, password, ping
+
     , disableoutput, enableoutput, outputs
     ) where
+
 
 
 
@@ -62,6 +71,11 @@ command1 s = command1with s decode
 
 command2 :: (Parameter a, Parameter b, Response c) => ByteString -> a -> b -> Command c
 command2 s a b = Command (joinParams [s, encode a, encode b]) decode
+
+command3 :: (Parameter a, Parameter b, Parameter c, Response d)
+         => ByteString -> a -> b -> c -> Command d
+command3 s a b c = Command (joinParams [s, encode a, encode b, encode c]) decode
+
 
 command0with :: ByteString -> Decoder a -> Command a
 command0with s d = Command s d
@@ -239,6 +253,45 @@ update :: Maybe URI -> Command JobID
 update = command1opt "update"
 
 -- rescan??
+
+
+listplaylist :: Playlist -> Command [URI]
+listplaylist = command1with "listplaylist" readURIs
+
+
+listplaylistinfo :: Playlist -> Command [Track]
+listplaylistinfo = command1 "listplaylistinfo"
+
+
+listplaylists :: Command [(Playlist, Text)]
+listplaylists = command0with "listplaylists" readPlaylists
+
+
+load :: Playlist -> Command ()
+load = command1 "load"
+
+
+playlistadd :: Playlist -> URI -> Command ()
+playlistadd = command2 "playlistadd"
+
+playlistclear :: Playlist -> Command ()
+playlistclear = command1 "playlistclear"
+
+playlistdelete :: Playlist -> PlaylistPos -> Command ()
+playlistdelete = command2 "playlistdelete"
+
+playlistmove :: Playlist -> TrackID -> PlaylistPos -> Command ()
+playlistmove = command3 "playlistmove"
+
+rename :: Playlist -> Playlist -> Command ()
+rename = command2 "rename"
+
+rm :: Playlist -> Command ()
+rm = command1 "rm"
+
+save :: Command ()
+save = command0 "save"
+
 
 
 commands :: Command [Text]

@@ -5,7 +5,7 @@ module Codec
     ( Decoder, Parameter(..), Response(..)
     , joinParams
     , readPosIDs, readSongsPltime, readSingleTags, readDirsFiles, readDirsTracks
-    , readTagTypes, readURLHandlers, readCommands
+    , readTagTypes, readURLHandlers, readCommands, readURIs, readPlaylists
     ) where
 
 
@@ -72,6 +72,9 @@ instance Parameter OutputID where
 
 instance Parameter SubsysChanged where
     encode = encodeChangedSubsys
+
+instance Parameter Playlist where
+    encode (Playlist p) = encode p
 
 
 joinParams :: [ByteString] -> ByteString
@@ -350,10 +353,13 @@ readSingleTags :: ByteString -> Decoder [Text]
 readSingleTags = asDecoder' . many . (fmap E.decodeUtf8) . key
 
 
+readURIs :: Decoder [URI]
+readURIs = asDecoder' (many fileField)
+
 
 readDirsFiles :: Decoder [Either URI URI]
 readDirsFiles = asDecoder' $
-    many ( Left  <$> dirField <|> Right <$> fileField )
+    many ( Left <$> dirField <|> Right <$> fileField )
 
 
 readDirsTracks :: Decoder [Either URI Track]
@@ -382,6 +388,11 @@ readCommands :: Decoder [Text]
 readCommands = asDecoder' $
         many (E.decodeUtf8 <$> key "command")
 
+
+readPlaylists :: Decoder [(Playlist, Text)]
+readPlaylists = asDecoder' $
+        many ( (,) <$> ((Playlist . E.decodeUtf8) <$> key "playlist")
+                   <*> (E.decodeUtf8 <$> key "Last-Modified") )
 
 
 coDecMap :: (Ord a)

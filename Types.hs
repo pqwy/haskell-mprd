@@ -111,6 +111,9 @@ data PlaylistTrack = PlaylistTrack
     } deriving (Eq, Show)
 
 
+newtype Playlist = Playlist Text
+    deriving (Show, Eq)
+
 
 data Range = PlaylistPos :/: PlaylistPos
     deriving (Eq, Show)
