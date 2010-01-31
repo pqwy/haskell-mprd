@@ -110,38 +110,38 @@ class Response a where decode :: Decoder a
 instance Response () where decode _ _ = return ()
 
 instance Response Stats where
-    decode = asDecoder' parseStats
+    decode = asDecoder parseStats
 
 instance Response Status where
-    decode = asDecoder' parseStatus
+    decode = asDecoder parseStatus
 
 instance Response [SubsysChanged] where
-    decode = asDecoder' parseChangedSubsys
+    decode = asDecoder parseChangedSubsys
 
 instance Response Track where
-    decode = asDecoder (parseTrack . mpdTags)
+    decode = asDecoder parseTrack
 
 instance Response [Track] where
-    decode = asDecoder (parseTracks . mpdTags)
+    decode = asDecoder parseTracks
 
 instance Response PlaylistTrack where
-    decode = asDecoder (parsePLTrack . mpdTags)
+    decode = asDecoder parsePLTrack
 
 instance Response [PlaylistTrack] where
-    decode = asDecoder (parsePLTracks . mpdTags)
+    decode = asDecoder parsePLTracks
 
 instance Response TrackID where
-    decode = asDecoder' (key "Id")
+    decode = asDecoder (key "Id")
 
 instance Response JobID where
-    decode = asDecoder' (key "updating_db")
+    decode = asDecoder (key "updating_db")
 
 instance Response [Output] where
-    decode = asDecoder' parseOutputs
+    decode = asDecoder parseOutputs
 
 -- }}}
 
-type Parser = Parsec [ByteString] ()
+type Parser = Parsec [ByteString] MPDConnState
 
 -- payloads {{{
 
@@ -185,16 +185,11 @@ instance Payload SubsysChanged where payload = parseChangedSubsys1
 
 -- prims {{{
 
-asDecoder :: (MPDConnState -> Parser a) -> Decoder a
+asDecoder :: Parser a -> Decoder a
 asDecoder p cn tx =
     either (Left . DecodeError2 . sourceLine . errorPos) Right
-           (parse (p cn) "<input>" tx)
-           -- (runParser (p cn) Nothing "<input>" tx)
-
-
-asDecoder' :: Parser a -> Decoder a
-asDecoder' = asDecoder . const
-
+           -- (parse (p cn) "<input>" tx)
+           (runParser p cn "<input>" tx)
 
 
 
@@ -246,19 +241,19 @@ checkListLen n l | length l == n = return l
 
 
 
-parseTrack :: Tagset -> Parser Track
-parseTrack tags =
+parseTrack :: Parser Track
+parseTrack =
     mkTrack <$> key "file"
             <*> ((Just <$> key "Time") <|> pure Nothing)
-            <*> parseTags tags
+            <*> parseTags
 
     where
         mkTrack f tm tg =
             zeroTrack { trackFile = f, trackTime = tm, trackTags = tg } 
     
 
-parseTags :: Tagset -> Parser Tags
-parseTags ts = loop []
+parseTags :: Parser Tags
+parseTags = loop []
     where
         loop acc = ( satisfyKey tagKey >>= \(k, v) ->
                         loop ((k, E.decodeUtf8 v) : acc) )
@@ -277,21 +272,21 @@ parseTags ts = loop []
 
 
 
-parsePLTrack :: Tagset -> Parser PlaylistTrack
-parsePLTrack ts = mkPLT <$> parseTrack ts
-                        <*> key "Pos"
-                        <*> key "Id"
+parsePLTrack :: Parser PlaylistTrack
+parsePLTrack = mkPLT <$> parseTrack
+                     <*> key "Pos"
+                     <*> key "Id"
 
     where
         mkPLT trk pos id =
             PlaylistTrack { plTrack = trk, plTrackPos = pos, plTrackId = id }
 
 
-parseTracks :: Tagset -> Parser [Track]
-parseTracks ts = many (parseTrack ts)
+parseTracks :: Parser [Track]
+parseTracks = many parseTrack
 
-parsePLTracks :: Tagset -> Parser [PlaylistTrack]
-parsePLTracks ts = many (parsePLTrack ts)
+parsePLTracks :: Parser [PlaylistTrack]
+parsePLTracks = many parsePLTrack
 
 
 parseOutputs :: Parser [Output]
@@ -315,59 +310,59 @@ parseSticker = split <$> key "sticker"
 -- decoders (exported) {{{
 
 decodePosIDs :: Decoder [(PlaylistPos, TrackID)]
-decodePosIDs = asDecoder' $
+decodePosIDs = asDecoder $
         many ( (,) <$> key "cpos" <*> key "Id" )
 
 
 decodeSongsPltime :: Decoder (Int, Seconds)
-decodeSongsPltime = asDecoder' ( (,) <$> key "songs" <*> key "playtime" )
+decodeSongsPltime = asDecoder ( (,) <$> key "songs" <*> key "playtime" )
 
 
 decodeSingleTags :: ByteString -> Decoder [Text]
-decodeSingleTags = asDecoder' . many . key
+decodeSingleTags = asDecoder . many . key
 
 
 decodeURIs :: Decoder [URI]
-decodeURIs = asDecoder' ( many (key "file") )
+decodeURIs = asDecoder ( many (key "file") )
 
 
 decodeDirsFiles :: Decoder [Either URI URI]
-decodeDirsFiles = asDecoder' $
+decodeDirsFiles = asDecoder $
     many (   Left  <$> key "directory"
          <|> Right <$> key "file" )
 
 
 decodeDirsTracks :: Decoder [Either URI Track]
-decodeDirsTracks = asDecoder $ \ts ->
+decodeDirsTracks = asDecoder $
         many (   Left  <$> key "directory"
-             <|> Right <$> parseTrack (mpdTags ts))
+             <|> Right <$> parseTrack )
 
 
 decodeTagTypes :: Decoder [MetaField]
-decodeTagTypes = asDecoder' ( many ( key "tagtype" ) )
+decodeTagTypes = asDecoder ( many ( key "tagtype" ) )
 
 
 decodeURLHandlers :: Decoder [Text]
-decodeURLHandlers = asDecoder' ( many (key "handler") )
+decodeURLHandlers = asDecoder ( many (key "handler") )
 
 
 decodeCommands :: Decoder [Text]
-decodeCommands = asDecoder' ( many (key "command") )
+decodeCommands = asDecoder ( many (key "command") )
 
 
 decodePlaylists :: Decoder [(Playlist, Text)]
-decodePlaylists = asDecoder' $
+decodePlaylists = asDecoder $
         many ( (,) <$> key "playlist"
                    <*> key "Last-Modified" )
 
 decodeSticker :: Decoder (Text, Text)
-decodeSticker = asDecoder' parseSticker
+decodeSticker = asDecoder parseSticker
 
 decodeStickers :: Decoder [(Text, Text)]
-decodeStickers = asDecoder' (many parseSticker)
+decodeStickers = asDecoder (many parseSticker)
 
 decodeStickersFiles :: Decoder [(URI, Text, Text)]
-decodeStickersFiles = asDecoder' $
+decodeStickersFiles = asDecoder $
     many ( wrap <$> key "file"
                 <*> parseSticker )
     where
