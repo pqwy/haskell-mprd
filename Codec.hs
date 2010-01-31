@@ -3,9 +3,12 @@
 
 module Codec
     ( Decoder, Parameter(..), Response(..)
-    , joinParams
+    , joinParams, (<+>)
+
     , decodePosIDs, decodeSongsPltime, decodeSingleTags, decodeDirsFiles, decodeDirsTracks
     , decodeTagTypes, decodeURLHandlers, decodeCommands, decodeURIs, decodePlaylists
+    , decodeSticker, decodeStickers, decodeStickersFiles
+
     , isAck, isOK, isListOK
     ) where
 
@@ -14,25 +17,23 @@ import Core
 import Types
 
 
-import Data.List ( unfoldr, sortBy )
+import Data.List ( sortBy )
 import Data.Function ( on )
-import Data.Maybe
+import qualified Data.Map as M
 
 import Control.Monad
 import Control.Applicative hiding ( Alternative(..), many )
 
-import Data.Text ( Text, pack, unpack )
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as E
+import qualified Data.Text as T ( cons, snoc, pack, unpack )
+import qualified Data.Text.Encoding as E ( decodeUtf8, encodeUtf8 )
 import qualified Data.ByteString.Char8 as B
-
-import qualified Data.Map as M
 
 import Text.Parsec
 import Text.Parsec.Combinator
 import Text.Parsec.Prim
 import Text.Parsec.Pos
 
+import Text.Parsec.ByteString ()
 
 
 -- co {{{
@@ -78,6 +79,10 @@ instance Parameter Playlist where
 joinParams :: [ByteString] -> ByteString
 joinParams = B.intercalate " "
 
+-- XXX SPEED
+(<+>) :: ByteString -> ByteString -> ByteString
+a <+> b = a `B.append` (" " `B.append` b)
+
 quotes :: Text -> Text
 quotes = T.cons '"' . (`T.snoc` '"')
 
@@ -88,8 +93,16 @@ simpleEncode = B.pack . show
 
 -- dec {{{
 
+infixl 4 <$$>
+(<$$>) :: (Functor f) => (a -> b) -> (c -> f a) -> c -> f b
+(<$$>) = (.) . fmap
+
+
+
 type Decoder a = MPDConnState -> [ByteString] -> Result a
 
+
+-- class interface {{{
 
 class Response a where decode :: Decoder a
 
@@ -126,12 +139,11 @@ instance Response JobID where
 instance Response [Output] where
     decode = asDecoder' parseOutputs
 
-
-
+-- }}}
 
 type Parser = Parsec [ByteString] ()
 
-
+-- payloads {{{
 
 class Payload a where payload :: ByteString -> Parser a
 
@@ -169,12 +181,9 @@ instance Payload URI where payload = URI <$$> payload
 instance Payload SubsysChanged where payload = parseChangedSubsys1
 
 
+-- }}}
 
-infixl 4 <$$>
-(<$$>) :: (Functor f) => (a -> b) -> (c -> f a) -> c -> f b
-(<$$>) = (.) . fmap
-
-
+-- prims {{{
 
 asDecoder :: (MPDConnState -> Parser a) -> Decoder a
 asDecoder p cn tx =
@@ -222,8 +231,9 @@ key :: (Payload a) => ByteString -> Parser a
 key x = satisfyKey (== x) >>= payload . snd
                 <?> ( "key '" ++ B.unpack x ++ "'" )
 
+-- }}}
 
-
+-- parsers (internal) {{{
 
 parseNTuple :: (Payload a) => Int -> ByteString -> Parser [a]
 parseNTuple n = payload >=> checkListLen n
@@ -254,17 +264,23 @@ parseTags ts = loop []
                         loop ((k, E.decodeUtf8 v) : acc) )
                <|> pure (mkTags acc)
 
-        tagKey = hasTag ts
-        -- tagKey = not . ( `elem` ["file", "directory", "Pos", "Id"] )
+        -- tagKey = hasTag ts
+
+        -- The nice thing about this is that it's completely retarded.
+        -- It relies on assumptions about possible keys following a tag
+        -- block, including everything where anything containing one
+        -- appears. Then again, it is not only much simpler than looking
+        -- up each key in a known-tags structure obtained from the MPD,
+        -- it is faster.
+        tagKey = not . ( `elem` ["file", "directory", "Pos"] )
 
 
 
 
 parsePLTrack :: Tagset -> Parser PlaylistTrack
-parsePLTrack ts =
-    mkPLT <$> parseTrack ts
-          <*> key "Pos"
-          <*> key "Id"
+parsePLTrack ts = mkPLT <$> parseTrack ts
+                        <*> key "Pos"
+                        <*> key "Id"
 
     where
         mkPLT trk pos id =
@@ -278,6 +294,25 @@ parsePLTracks :: Tagset -> Parser [PlaylistTrack]
 parsePLTracks ts = many (parsePLTrack ts)
 
 
+parseOutputs :: Parser [Output]
+parseOutputs = many
+        ( mkOut <$> key "outputid"
+                <*> key "outputname"
+                <*> key "outputenabled" )
+    where
+        mkOut k n e = Output { outputID = k, outputName = n, outputEnabled = e }
+
+
+parseSticker :: Parser (Text, Text)
+parseSticker = split <$> key "sticker"
+    where
+        split x = let (a, b) = (== '=') `B.break` x
+                  in (E.decodeUtf8 a, E.decodeUtf8 (B.drop 1 b))
+
+
+-- }}}
+
+-- decoders (exported) {{{
 
 decodePosIDs :: Decoder [(PlaylistPos, TrackID)]
 decodePosIDs = asDecoder' $
@@ -308,20 +343,13 @@ decodeDirsTracks = asDecoder $ \ts ->
              <|> Right <$> parseTrack (mpdTags ts))
 
 
-parseOutputs :: Parser [Output]
-parseOutputs = many
-        ( mkOut <$> key "outputid"
-                <*> key "outputname"
-                <*> key "outputenabled" )
-    where
-        mkOut k n e = Output { outputID = k, outputName = n, outputEnabled = e }
-
-
 decodeTagTypes :: Decoder [MetaField]
 decodeTagTypes = asDecoder' ( many ( key "tagtype" ) )
 
+
 decodeURLHandlers :: Decoder [Text]
 decodeURLHandlers = asDecoder' ( many (key "handler") )
+
 
 decodeCommands :: Decoder [Text]
 decodeCommands = asDecoder' ( many (key "command") )
@@ -332,13 +360,27 @@ decodePlaylists = asDecoder' $
         many ( (,) <$> key "playlist"
                    <*> key "Last-Modified" )
 
+decodeSticker :: Decoder (Text, Text)
+decodeSticker = asDecoder' parseSticker
 
+decodeStickers :: Decoder [(Text, Text)]
+decodeStickers = asDecoder' (many parseSticker)
 
-buildByMapLax :: a -> (M.Map ByteString (ByteString -> Parser (a -> a))) -> Parser a
+decodeStickersFiles :: Decoder [(URI, Text, Text)]
+decodeStickersFiles = asDecoder' $
+    many ( wrap <$> key "file"
+                <*> parseSticker )
+    where
+        wrap u (s, v) = (u, s, v)
+
+-- }}}
+
+-- big tables {{{
+
+buildByMapLax :: a -> M.Map ByteString (ByteString -> Parser (a -> a)) -> Parser a
 buildByMapLax zero decoders = loop zero
     where
         loop a = ( lineKV >>= \(k, v) ->
-                        -- maybe (pure a) (<*> pure a)
                         maybe (pure a) (\p -> p v <*> pure a)
                                 (k `M.lookup` decoders) >>= loop )
                  <|> pure a
@@ -392,9 +434,8 @@ parseStatus = assocTypeLax zeroStatus
 
      ]
 
-
-plVol :: ByteString -> Parser (Maybe Int)
-plVol = (\x -> if x < 0 then Nothing else Just x) <$$> payload
+    where
+        plVol = (\x -> if x < 0 then Nothing else Just x) <$$> payload
 
 
 
@@ -406,9 +447,9 @@ coDecMap m = ( \b -> case b `M.lookup` M.fromAscList (sort m) of
                           Nothing -> unexpected (B.unpack b)
                           Just x  -> return x
 
-             , \a -> fromMaybe
-                        (error "coDecMap: inexhaustive map.")
-                        (a `M.lookup` (M.fromAscList . sort . swap) m )
+             , \a -> case a `M.lookup` (M.fromAscList . sort . swap) m of
+                          Nothing -> error "coDecMap: inexhaustive map."
+                          Just x  -> x
 
              )
     where
@@ -433,10 +474,12 @@ coDecMap m = ( \b -> case b `M.lookup` M.fromAscList (sort m) of
 
 parseChangedSubsys = many ( key "changed" )
 
+-- }}}
 
 
+-- }}}
 
-
+-- that _other_ dec {{{
 
 isOK, isAck, isListOK :: ByteString -> Bool
 isOK     = ( == "OK" )
@@ -444,8 +487,34 @@ isAck    = ( "ACK " `B.isPrefixOf` )
 isListOK = ( == "list_OK" )
 
 
+int = read <$> many1 digit
+ackerr = int2AckErr <$> int
+
+between1 a b = between (char a) (char b)
+
+ackParser :: Parsec ByteString () Ack
+ackParser = do
+    string "ACK "
+
+    (e, p) <- between1 '[' ']'
+                ((,) <$> (ackerr <* char '@') <*> int)
+    spaces
+
+    cmd <- between1 '{' '}'
+            ( many ( noneOf "}" ) )
+    let cmd' | null cmd  = Nothing
+             | otherwise = Just cmd
+    spaces
+
+    -- ugly, but avoids utf8-string...
+    tail <- T.unpack . E.decodeUtf8 <$> getInput
+
+    return  Ack { ackError = e
+                , ackPosition = p
+                , ackCommand = cmd'
+                , ackDescription = tail }
+
 
 -- }}}
-
 
 -- vim:set fdm=marker:

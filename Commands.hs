@@ -1,57 +1,58 @@
 {-# LANGUAGE OverloadedStrings  #-}
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances  #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies, MultiParamTypeClasses, UndecidableInstances  #-}
 
 
 module Commands
-    ( Command(..)
-    , RangeLike
+    ( Command(..), RangeLike
 
     , stats, status, clearerror, currentsong, unsafeIdle
 
-    , consume, random, repeat, single
-    , crossfade, setvol, next, previous, stop
-    , pause, play, playid, seek, seekid 
+    , consume, random, repeat, single, crossfade, setvol
+
+    , next, previous, stop, pause, play, playid, seek, seekid 
 
     , add, addid, clear, move, moveid, delete, deleteid
-
     , playlistid, playlistidAll, playlistfind, playlistinfo, playlistinfo1
     , playlistsearch, plchanges, plchangesposid, shuffle, swap, swapid
-
-    , count, find, list, listAlbumsByArtist, listall, listallinfo, lsinfo, search, update
 
     , listplaylists, listplaylist, listplaylistinfo, load, playlistadd
     , playlistclear, playlistdelete, playlistmove, rename, rm, save
 
+    , count, find, list, listAlbumsByArtist, listall, listallinfo, lsinfo, search, update
+
+    , stickerGet, stickerSet, stickerDelete, stickerList, stickerFind
+
     , close, kill, password, ping
 
     , disableoutput, enableoutput, outputs
+
+    , commands, tagtypes, urlhandlers
+
     ) where
 
 
 
 
-import Core
-import Types
-import Codec
+import Core ( Text, ByteString, MetaField, MetaContent )
+
+import Types ( URI, QueryPred, Seconds, PlaylistPos, PlaylistVersion, TrackID, JobID, Output, OutputID
+             , Stats, Status, SubsysChanged, Track, PlaylistTrack, Playlist, Range
+             )
+
+import Codec ( Decoder, Parameter(..), Response(..), joinParams, (<+>)
+
+             , decodePosIDs, decodeSongsPltime, decodeSingleTags, decodeDirsFiles, decodeDirsTracks
+             , decodeTagTypes, decodeURLHandlers, decodeCommands, decodeURIs, decodePlaylists
+             , decodeSticker, decodeStickers, decodeStickersFiles
+             )
 
 
 import Prelude hiding ( repeat )
 
 
-import Control.Monad
-import Control.Applicative
-
-
-import Data.Text ( Text, pack )
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as E
-import qualified Data.ByteString.Char8 as B
-
-
-
 
 data Command a = Command ByteString (Decoder a)
-
 
 
 class (Parameter a) => RangeLike a where
@@ -60,168 +61,190 @@ instance RangeLike PlaylistPos where
 instance RangeLike Range where
 
 
--- command builders {{{
+
+instance (Parameter a) => Parameter (Maybe a) where
+    encode Nothing  = ""
+    encode (Just x) = encode x
 
 
-command0 :: (Response a) => ByteString -> Command a
-command0 s = command0with s decode
+class CmdBuilder c a | c -> a where
+    commandWith :: ByteString -> Decoder a -> c
 
-command1 :: (Parameter a, Response b) => ByteString -> a -> Command b
-command1 s = command1with s decode
+instance CmdBuilder (Command a) a where
+    commandWith s d = Command s d
 
-command2 :: (Parameter a, Parameter b, Response c) => ByteString -> a -> b -> Command c
-command2 s a b = Command (joinParams [s, encode a, encode b]) decode
-
-command3 :: (Parameter a, Parameter b, Parameter c, Response d)
-         => ByteString -> a -> b -> c -> Command d
-command3 s a b c = Command (joinParams [s, encode a, encode b, encode c]) decode
+instance (CmdBuilder c a, Parameter p) => CmdBuilder (p -> c) a where
+    commandWith s d p = commandWith (s <+> encode p) d
 
 
-command0with :: ByteString -> Decoder a -> Command a
-command0with s d = Command s d
+command :: (CmdBuilder a b, Response b) => ByteString -> a
+command s = commandWith s decode
 
-command1with :: (Parameter a) => ByteString -> Decoder b -> a -> Command b
-command1with s d a = Command (joinParams [s, encode a]) d
 
-command1optWith :: (Parameter a) => ByteString -> Decoder b -> Maybe a -> Command b
-command1optWith s d (Just x) = command1with s d x
-command1optWith s d Nothing  = command0with s d
 
-command1opt :: (Parameter a, Response b) => ByteString -> Maybe a -> Command b
-command1opt s = command1optWith s decode
+-- querying {{{
+
+stats :: Command Stats
+stats = command "stats"
+
+status :: Command Status
+status = command "status"
+
+unsafeIdle :: [SubsysChanged] -> Command [SubsysChanged]
+unsafeIdle = command "idle"
+
+clearerror :: Command ()
+clearerror = command "clearerror"
+
+currentsong :: Command PlaylistTrack
+currentsong = command "currentsong"
 
 -- }}}
 
-
-
-stats :: Command Stats
-stats = command0 "stats"
-
-
-status :: Command Status
-status = command0 "status"
-
-
-unsafeIdle :: [SubsysChanged] -> Command [SubsysChanged]
-unsafeIdle = command1 "idle"
-
-
-clearerror :: Command ()
-clearerror = command0 "clearerror"
-
-
-currentsong :: Command PlaylistTrack
-currentsong = command0 "currentsong"
-
+-- playback options {{{
 
 consume, random, repeat, single :: Bool -> Command ()
 
-consume = command1 "consume"
-random  = command1 "random"
-repeat  = command1 "repeat"
-single  = command1 "single"
-
+consume = command "consume"
+random  = command "random"
+repeat  = command "repeat"
+single  = command "single"
 
 crossfade, setvol :: Int -> Command ()
 
-crossfade = command1 "crossfade"
+crossfade = command "crossfade"
 
-setvol x | x >= 0 && x <= 100 = command1 "setvol" x
+setvol x | x >= 0 && x <= 100 = command "setvol" x
          | otherwise = error ("setvol: allowed range 0-100, got " ++ show x)
 
+-- }}}
+
+-- controlling playback {{{
 
 next, previous, stop :: Command ()
-next     = command0 "next"
-previous = command0 "previous"
-stop     = command0 "stop"
+next     = command "next"
+previous = command "previous"
+stop     = command "stop"
 
 pause :: Bool -> Command ()
-pause = command1 "pause"
+pause = command "pause"
 
 play :: PlaylistPos -> Command ()
-play = command1 "play"
+play = command "play"
 
 playid :: TrackID -> Command ()
-playid = command1 "playid"
-
+playid = command "playid"
 
 seek :: PlaylistPos -> Seconds -> Command ()
-seek = command2 "seek"
+seek = command "seek"
 
 seekid :: TrackID -> Seconds -> Command ()
-seekid = command2 "seekid"
+seekid = command "seekid"
 
+-- }}}
 
-
+-- current playlist {{{
 
 add :: URI -> Command ()
-add = command1 "add"
+add = command "add"
 
 addid :: URI -> Command TrackID
-addid = command1 "addid"
-
+addid = command "addid"
 
 clear :: Command ()
-clear = command0 "clear"
-
+clear = command "clear"
 
 delete :: (RangeLike i) => i -> Command ()
-delete = command1 "delete"
+delete = command "delete"
 
 deleteid :: TrackID -> Command ()
-deleteid = command1 "deleteid"
+deleteid = command "deleteid"
 
 move :: (RangeLike i) => i -> PlaylistPos -> Command ()
-move = command2 "move"
+move = command "move"
 
 moveid :: TrackID -> PlaylistPos -> Command ()
-moveid = command2 "moveid"
-
+moveid = command "moveid"
 
 playlistidAll :: Command [PlaylistTrack]
-playlistidAll = command0 "playlistid"
+playlistidAll = command "playlistid"
 
 playlistid :: TrackID -> Command PlaylistTrack
-playlistid = command1 "playlistid"
+playlistid = command "playlistid"
 
 playlistfind :: [QueryPred] -> Command [PlaylistTrack]
-playlistfind = command1 "playlistfind"
+playlistfind = command "playlistfind"
 
 playlistinfo :: Maybe Range -> Command [PlaylistTrack]
-playlistinfo = command1opt "playlistinfo"
+playlistinfo = command "playlistinfo"
 
 playlistinfo1 :: PlaylistPos -> Command PlaylistTrack
-playlistinfo1 = command1 "playlistinfo"
+playlistinfo1 = command "playlistinfo"
 
 playlistsearch :: [QueryPred] -> Command [PlaylistTrack]
-playlistsearch = command1 "playlistsearch"
+playlistsearch = command "playlistsearch"
 
 plchanges :: PlaylistVersion -> Command [PlaylistTrack]
-plchanges = command1 "plchanges"
-
+plchanges = command "plchanges"
 
 plchangesposid :: PlaylistVersion -> Command [(PlaylistPos, TrackID)]
-plchangesposid = command1with "plchangesposid" decodePosIDs
-
+plchangesposid = commandWith "plchangesposid" decodePosIDs
 
 shuffle :: Maybe Range -> Command ()
-shuffle = command1opt "shuffle"
-
+shuffle = command "shuffle"
 
 swap :: PlaylistPos -> PlaylistPos -> Command ()
-swap = command2 "swap"
+swap = command "swap"
 
 swapid :: TrackID -> TrackID -> Command ()
-swapid = command2 "swap"
+swapid = command "swapid"
 
+-- }}}
 
+-- stored playlists {{{
+
+listplaylist :: Playlist -> Command [URI]
+listplaylist = commandWith "listplaylist" decodeURIs
+
+listplaylistinfo :: Playlist -> Command [Track]
+listplaylistinfo = command "listplaylistinfo"
+
+listplaylists :: Command [(Playlist, Text)]
+listplaylists = commandWith "listplaylists" decodePlaylists
+
+load :: Playlist -> Command ()
+load = command "load"
+
+playlistadd :: Playlist -> URI -> Command ()
+playlistadd = command "playlistadd"
+
+playlistclear :: Playlist -> Command ()
+playlistclear = command "playlistclear"
+
+playlistdelete :: Playlist -> PlaylistPos -> Command ()
+playlistdelete = command "playlistdelete"
+
+playlistmove :: Playlist -> TrackID -> PlaylistPos -> Command ()
+playlistmove = command "playlistmove"
+
+rename :: Playlist -> Playlist -> Command ()
+rename = command "rename"
+
+rm :: Playlist -> Command ()
+rm = command "rm"
+
+save :: Command ()
+save = command "save"
+
+-- }}}
+
+-- music database {{{
 
 count :: [QueryPred] -> Command (Int, Seconds)
-count = command1with "count" decodeSongsPltime
-
+count = commandWith "count" decodeSongsPltime
 
 find :: [QueryPred] -> Command [Track]
-find = command1 "find"
+find = command "find"
 
 -- findadd??
 
@@ -233,109 +256,83 @@ listAlbumsByArtist a =
     Command (joinParams ["list", "Album", encode a])
             (decodeSingleTags ("Album"))
 
-
 listall :: Maybe URI -> Command [Either URI URI]
-listall = command1optWith "listall" decodeDirsFiles
+listall = commandWith "listall" decodeDirsFiles
 
 listallinfo :: Maybe URI -> Command [Either URI Track]
-listallinfo = command1optWith "listallinfo" decodeDirsTracks
+listallinfo = commandWith "listallinfo" decodeDirsTracks
 
 lsinfo :: Maybe URI -> Command [Either URI Track]
-lsinfo = command1optWith "lsinfo" decodeDirsTracks
+lsinfo = commandWith "lsinfo" decodeDirsTracks
 
 search :: [QueryPred] -> Command [Track]
-search = command1 "search"
-
-
--- findadd?
+search = command "search"
 
 update :: Maybe URI -> Command JobID
-update = command1opt "update"
+update = command "update"
 
 -- rescan??
+-- }}}
+
+-- stickers {{{
+
+stickerGet :: URI -> Text -> Command (Text, Text)
+stickerGet = commandWith "sticker get song" decodeSticker
+
+stickerSet :: URI -> Text -> Text -> Command ()
+stickerSet = command "sticker set song"
+
+stickerDelete :: URI -> Maybe Text -> Command ()
+stickerDelete = command "sticker delete song"
+
+stickerList :: URI -> Command [(Text, Text)]
+stickerList = commandWith "sticker list song" decodeStickers
+
+stickerFind :: URI -> Text -> Command [(URI, Text, Text)]
+stickerFind = commandWith "sticker find song" decodeStickersFiles
 
 
-listplaylist :: Playlist -> Command [URI]
-listplaylist = command1with "listplaylist" decodeURIs
+-- }}}
 
+-- connection {{{
 
-listplaylistinfo :: Playlist -> Command [Track]
-listplaylistinfo = command1 "listplaylistinfo"
+close, kill, ping :: Command ()
 
+close = command "close"
+kill  = command "kill"
+ping  = command "ping"
 
-listplaylists :: Command [(Playlist, Text)]
-listplaylists = command0with "listplaylists" decodePlaylists
+password :: Text -> Command ()
+password = command "password"
 
+-- }}}
 
-load :: Playlist -> Command ()
-load = command1 "load"
+-- outputs {{{
 
+disableoutput, enableoutput :: OutputID -> Command ()
+disableoutput = command "disableoutput"
+enableoutput  = command "enableoutput"
 
-playlistadd :: Playlist -> URI -> Command ()
-playlistadd = command2 "playlistadd"
+outputs :: Command [Output]
+outputs = command "outputs"
 
-playlistclear :: Playlist -> Command ()
-playlistclear = command1 "playlistclear"
+-- }}}
 
-playlistdelete :: Playlist -> PlaylistPos -> Command ()
-playlistdelete = command2 "playlistdelete"
-
-playlistmove :: Playlist -> TrackID -> PlaylistPos -> Command ()
-playlistmove = command3 "playlistmove"
-
-rename :: Playlist -> Playlist -> Command ()
-rename = command2 "rename"
-
-rm :: Playlist -> Command ()
-rm = command1 "rm"
-
-save :: Command ()
-save = command0 "save"
-
-
+-- reflection {{{
 
 commands :: Command [Text]
-commands = command0with "commands" decodeCommands
+commands = commandWith "commands" decodeCommands
 
 -- notcommands :: Command [Text] -- ???
--- notcommands = command0with "notcommands" decodeCo
 
 tagtypes :: Command [MetaField]
-tagtypes = command0with "tagtypes" decodeTagTypes
+tagtypes = commandWith "tagtypes" decodeTagTypes
 
 urlhandlers :: Command [Text]
-urlhandlers = command0with "urlhandlers" decodeURLHandlers
+urlhandlers = commandWith "urlhandlers" decodeURLHandlers
 
 -- decoders???
 
-
-
-close :: Command ()
-close = command0 "close"
-
-
-kill :: Command ()
-kill = command0 "kill"
-
-
-password :: Text -> Command ()
-password = command1 "password"
-
-
-ping :: Command ()
-ping = command0 "ping"
-
-
-
-disableoutput, enableoutput :: OutputID -> Command ()
-
-disableoutput = command1 "disableoutput"
-
-enableoutput  = command1 "enableoutput"
-
-
-outputs :: Command [Output]
-outputs = command0 "outputs"
-
+-- }}}
 
 
