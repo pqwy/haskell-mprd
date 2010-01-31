@@ -1,9 +1,10 @@
 {-# LANGUAGE OverloadedStrings  #-}
-{-# LANGUAGE PatternGuards, FlexibleInstances, TypeSynonymInstances  #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances, TypeSynonymInstances, OverlappingInstances  #-}
 
 module Codec
     ( Decoder, Parameter(..), Response(..)
     , joinParams, (<+>)
+    , bsToString, stringToBs
 
     , decodePosIDs, decodeSongsPltime, decodeSingleTags, decodeDirsFiles, decodeDirsTracks
     , decodeTagTypes, decodeURLHandlers, decodeCommands, decodeURIs, decodePlaylists
@@ -32,6 +33,7 @@ import Text.Parsec
 import Text.Parsec.Combinator
 import Text.Parsec.Prim
 import Text.Parsec.Pos
+import Text.Parsec.Error ( showErrorMessages, errorMessages )
 
 import Text.Parsec.ByteString ()
 
@@ -40,6 +42,8 @@ import Text.Parsec.ByteString ()
 
 class Parameter a where encode :: a -> ByteString
 
+
+instance Parameter String where encode = stringToBs
 
 instance (Parameter a) => Parameter [a] where
     encode = joinParams . map encode
@@ -89,6 +93,10 @@ quotes = T.cons '"' . (`T.snoc` '"')
 simpleEncode :: (Show a) => a -> ByteString
 simpleEncode = B.pack . show
 
+-- XXX fugly....
+stringToBs :: String -> ByteString
+stringToBs = E.encodeUtf8 . T.pack
+
 -- }}}
 
 -- dec {{{
@@ -99,7 +107,7 @@ infixl 4 <$$>
 
 
 
-type Decoder a = MPDConnState -> [ByteString] -> Result a
+type Decoder a = [ByteString] -> Result a
 
 
 -- class interface {{{
@@ -107,7 +115,7 @@ type Decoder a = MPDConnState -> [ByteString] -> Result a
 class Response a where decode :: Decoder a
 
 
-instance Response () where decode _ _ = return ()
+instance Response () where decode _ = return ()
 
 instance Response Stats where
     decode = asDecoder parseStats
@@ -141,7 +149,7 @@ instance Response [Output] where
 
 -- }}}
 
-type Parser = Parsec [ByteString] MPDConnState
+type Parser = Parsec [ByteString] ()
 
 -- payloads {{{
 
@@ -151,6 +159,8 @@ instance Payload ByteString where payload = return
 
 instance Payload Text where payload = return . E.decodeUtf8
 
+instance Payload String where payload = return . bsToString
+
 instance Payload Int where
     payload b =
         case B.readInt b of
@@ -159,8 +169,6 @@ instance Payload Int where
 
 instance Payload Bool where
     payload = fmap (/= 0) . (payload :: ByteString -> Parser Int)
-
-instance (Payload a) => Payload [a] where payload = mapM payload . B.split ':'
 
 instance Payload TrackID where payload = TID <$$> payload
 
@@ -186,11 +194,15 @@ instance Payload SubsysChanged where payload = parseChangedSubsys1
 -- prims {{{
 
 asDecoder :: Parser a -> Decoder a
-asDecoder p cn tx =
-    either (Left . DecodeError2 . sourceLine . errorPos) Right
-           -- (parse (p cn) "<input>" tx)
-           (runParser p cn "<input>" tx)
-
+asDecoder p tx = either (Left . mapError) Right
+                        (parse p "" tx)
+    where
+        mapError e = DecodeError
+                        (sourceLine (errorPos e))
+                        (showErrorMessages
+                                "or" "unknown" "expecting"
+                                "unexpected" "eof"
+                                (errorMessages e))
 
 
 posNextLine s _ _ = incSourceLine s 1
@@ -230,12 +242,16 @@ key x = satisfyKey (== x) >>= payload . snd
 
 -- parsers (internal) {{{
 
+
+-- XXX ugly, but avoids utf8-string...
+bsToString :: ByteString -> String
+bsToString = T.unpack . E.decodeUtf8
+
+
 parseNTuple :: (Payload a) => Int -> ByteString -> Parser [a]
 parseNTuple n =
-    payload >=> \l -> if length l == n
-                         then return l
-                         else fail (show n ++ "-place list")
-
+    payload >=> mapM payload . B.split ':' >=> \l ->
+        if length l == n then return l else fail (show n ++ "-place list")
 
 
 parseTrack :: Parser Track
@@ -265,8 +281,6 @@ parseTags = loop []
         -- up each key in a known-tags structure obtained from the MPD,
         -- it is faster.
         tagKey = not . ( `elem` ["file", "directory", "Pos"] )
-
-
 
 
 parsePLTrack :: Parser PlaylistTrack
@@ -499,8 +513,7 @@ ackParser = do
              | otherwise = Just cmd
     spaces
 
-    -- ugly, but avoids utf8-string...
-    tail <- T.unpack . E.decodeUtf8 <$> getInput
+    tail <- bsToString <$> getInput
 
     return  Ack { ackError = e
                 , ackPosition = p

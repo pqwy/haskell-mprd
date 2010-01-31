@@ -6,11 +6,14 @@ module Core
     , Tags, mkTags, lookupTag, tags
     , MPDError(..), Result
     , MPDConnState(..), zeroState
-    , deftags
+
+    , Ack(..), AckError(..), int2AckErr
+    -- , deftags
     ) where
 
 
 import Control.Monad ( MonadPlus(..) )
+import Data.Maybe
 
 import Data.List ( sort, sortBy )
 import Data.Function ( on )
@@ -31,29 +34,27 @@ data MPDConnState = MPDConnState
         , mpdTags :: Tagset
         }
 
--- zeroState = MPDConnState { mpdConn = undefined , mpdTags = mkTagset [] }
+zeroState = MPDConnState { mpdConn = undefined , mpdTags = mkTagset [] }
 
-deftags :: [ByteString]
-deftags =
-    [ "Artist"   , "Album" , "AlbumArtist"
-    , "Title"    , "Track" , "Name"
-    , "Genre"    , "Date"  , "Composer"
-    , "Performer", "Disc"
-    , "MUSICBRAINZ_ARTISTID", "MUSICBRAINZ_ALBUMID"
-    , "MUSICBRAINZ_ALBUMARTISTID", "MUSICBRAINZ_TRACKID"
-    ]
+-- deftags :: [ByteString]
+-- deftags =
+--     [ "Artist"   , "Album" , "AlbumArtist"
+--     , "Title"    , "Track" , "Name"
+--     , "Genre"    , "Date"  , "Composer"
+--     , "Performer", "Disc"
+--     , "MUSICBRAINZ_ARTISTID", "MUSICBRAINZ_ALBUMID"
+--     , "MUSICBRAINZ_ALBUMARTISTID", "MUSICBRAINZ_TRACKID"
+--     ]
+-- 
+-- zeroState = MPDConnState { mpdConn = undefined , mpdTags = mkTagset deftags }
+-- 
 
-zeroState = MPDConnState { mpdConn = undefined , mpdTags = mkTagset deftags }
 
-
-
-data MPDError = DecodeError String (Maybe Text)
-              | DecodeError2 Int
-              | ErrIdling
+data MPDError = DecodeError Int String
+              | AckError Ack
               | OtherError String
 
     deriving (Eq, Show)
-
 
 
 
@@ -102,9 +103,51 @@ instance Monad Result where
     fail = Left . OtherError
 
 
-instance MonadPlus Result where
-    Left _ `mplus` b = b
-    a `mplus` b = a
-    
-    mzero = Left (OtherError "mzero!")
+-- instance MonadPlus Result where
+--     Left _ `mplus` b = b
+--     a `mplus` b = a
+--     
+--     mzero = Left (OtherError "mzero!")
+
+
+
+data AckError = AckNotList | AckArg | AckPassword | AckPermission | AckUnknown
+
+              | AckNoExist | AckPlaylistMax | AckSystem | AckPlaylistLoad
+              | AckUpdateAlready | AckPlayerSync | AckExist
+
+              | AckUnrecognizedAck
+
+    deriving (Eq, Show)
+
+
+ackErrorMap = [ (AckNotList       , 1)
+              , (AckArg           , 2)
+              , (AckPassword      , 3)
+              , (AckPermission    , 4)
+              , (AckUnknown       , 4)
+
+              , (AckNoExist       , 50)
+              , (AckPlaylistMax   , 51)
+              , (AckSystem        , 52)
+              , (AckPlaylistLoad  , 53)
+              , (AckUpdateAlready , 54)
+              , (AckPlayerSync    , 55)
+              , (AckExist         , 56)
+              ]
+
+int2AckErr :: Int -> AckError
+int2AckErr = fromMaybe AckUnrecognizedAck . (`M.lookup` amap)
+    where
+        amap = M.fromDistinctAscList ( map (\(a, b) -> (b, a)) ackErrorMap )
+
+
+data Ack =
+    Ack { ackError       :: AckError
+        , ackPosition    :: Int
+        , ackCommand     :: Maybe String
+        , ackDescription :: String }
+
+    deriving (Eq, Show)
+
 

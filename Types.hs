@@ -5,7 +5,7 @@ module Types where
 
 import Core
 
-import Data.Maybe
+import Data.Text ( pack )
 import qualified Data.Map as M
 
 
@@ -13,6 +13,10 @@ import qualified Data.Map as M
 
 newtype URI = URI Text
     deriving (Eq, Show)
+
+uri :: String -> URI
+uri = URI . pack
+
 
 type QueryPred = (MetaField, MetaContent)
 
@@ -139,51 +143,8 @@ newtype OutputID = OutputID Int
 
 data Output =
     Output { outputID      :: OutputID
-           , outputName    :: Text
+           , outputName    :: String
            , outputEnabled :: Bool }
-
-    deriving (Eq, Show)
-
-
-
-
-data AckError = AckNotList | AckArg | AckPassword | AckPermission | AckUnknown
-
-              | AckNoExist | AckPlaylistMax | AckSystem | AckPlaylistLoad
-              | AckUpdateAlready | AckPlayerSync | AckExist
-
-              | AckUnrecognizedAck
-
-    deriving (Eq, Show)
-
-
-ackErrorMap = [ (AckNotList       , 1)
-              , (AckArg           , 2)
-              , (AckPassword      , 3)
-              , (AckPermission    , 4)
-              , (AckUnknown       , 4)
-
-              , (AckNoExist       , 50)
-              , (AckPlaylistMax   , 51)
-              , (AckSystem        , 52)
-              , (AckPlaylistLoad  , 53)
-              , (AckUpdateAlready , 54)
-              , (AckPlayerSync    , 55)
-              , (AckExist         , 56)
-              ]
-
-int2AckErr :: Int -> AckError
-int2AckErr = fromMaybe AckUnrecognizedAck . (`M.lookup` amap)
-    where
-        amap = M.fromDistinctAscList ( map (\(a, b) -> (b, a)) ackErrorMap )
-
-
-
-data Ack =
-    Ack { ackError       :: AckError
-        , ackPosition    :: Int
-        , ackCommand     :: Maybe String
-        , ackDescription :: String }
 
     deriving (Eq, Show)
 

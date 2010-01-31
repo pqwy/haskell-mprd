@@ -303,7 +303,7 @@ close = command "close"
 kill  = command "kill"
 ping  = command "ping"
 
-password :: Text -> Command ()
+password :: String -> Command ()
 password = command "password"
 
 -- }}}
