@@ -81,7 +81,7 @@ joinParams = B.intercalate " "
 
 -- XXX SPEED
 (<+>) :: ByteString -> ByteString -> ByteString
-a <+> b = a `B.append` (" " `B.append` b)
+a <+> b = a `B.append` (' ' `B.cons` b)
 
 quotes :: Text -> Text
 quotes = T.cons '"' . (`T.snoc` '"')
@@ -231,13 +231,10 @@ key x = satisfyKey (== x) >>= payload . snd
 -- parsers (internal) {{{
 
 parseNTuple :: (Payload a) => Int -> ByteString -> Parser [a]
-parseNTuple n = payload >=> checkListLen n
-
-
-checkListLen :: Int -> [a] -> Parser [a]
-checkListLen n l | length l == n = return l
-                 | otherwise     = fail (show n ++ "-place list")
-
+parseNTuple n =
+    payload >=> \l -> if length l == n
+                         then return l
+                         else fail (show n ++ "-place list")
 
 
 
@@ -350,6 +347,7 @@ decodeCommands :: Decoder [Text]
 decodeCommands = asDecoder ( many (key "command") )
 
 
+-- XXX last-modified. proper time?
 decodePlaylists :: Decoder [(Playlist, Text)]
 decodePlaylists = asDecoder $
         many ( (,) <$> key "playlist"
@@ -361,12 +359,12 @@ decodeSticker = asDecoder parseSticker
 decodeStickers :: Decoder [(Text, Text)]
 decodeStickers = asDecoder (many parseSticker)
 
-decodeStickersFiles :: Decoder [(URI, Text, Text)]
+decodeStickersFiles :: Decoder [(URI, Text)]
 decodeStickersFiles = asDecoder $
     many ( wrap <$> key "file"
                 <*> parseSticker )
     where
-        wrap u (s, v) = (u, s, v)
+        wrap u (_, v) = (u, v)
 
 -- }}}
 

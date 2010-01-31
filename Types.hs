@@ -32,9 +32,11 @@ newtype JobID = JID Int
     deriving (Eq, Show)
 
 
-data Stats = Stats { stsArtists, stsAlbums,   stsSongs
-                   , stsUptime,  stsPlaytime, stsDbPlaytime :: Int
-                   , stsDbUpdate :: Int } -- <- unix time
+data Stats =
+    Stats { stsArtists, stsAlbums, stsSongs
+          , stsUptime, stsPlaytime, stsDbPlaytime :: Int
+          , stsDbUpdate :: Int } -- <- unix time
+
     deriving (Eq, Show)
 
 
@@ -46,36 +48,40 @@ zeroStats =
 
 
 
-data Status = Status { stVolume :: Maybe Int
-                     , stRepeat, stRandom, stSingle, stConsume :: Bool
-                     , stPlaylist :: PlaylistVersion
-                     , stPlaylistLength :: Int
-                     , stXfade :: Seconds
-                     , stState :: PlayState
-                     , stSong, stNextsong :: PlaylistPos
-                     , stSongId, stNextsongId :: TrackID
-                     , stTime :: (Seconds, Seconds)
-                     , stBitrate :: Int
-                     , stAudio :: (Int, Int, Int)
-                     , stUpdatingDB :: Maybe JobID
-                    }
+data Status =
+    Status { stRepeat, stRandom, stSingle, stConsume :: Bool
+
+           , stVolume               :: Maybe Int
+           , stPlaylist             :: PlaylistVersion
+           , stPlaylistLength       :: Int
+           , stXfade                :: Seconds
+           , stState                :: PlayState
+           , stSong, stNextsong     :: PlaylistPos
+           , stSongId, stNextsongId :: TrackID
+           , stTime                 :: (Seconds, Seconds)
+           , stBitrate              :: Int
+           , stAudio                :: (Int, Int, Int)
+           , stUpdatingDB           :: Maybe JobID }
+
     deriving (Eq, Show)
 
 
 zeroStatus =
-    Status { stVolume = Nothing
-           , stRepeat = False, stRandom = False, stSingle = False, stConsume = False
-           , stPlaylist = PLV 0
+    Status { stRepeat = False, stRandom = False, stSingle = False, stConsume = False
+
+           , stVolume         = Nothing
+           , stPlaylist       = PLV 0
            , stPlaylistLength = 0
-           , stXfade = 0
-           , stState = StateStop
-           , stSong = 0, stNextsong = 0
-           , stSongId = TID 0, stNextsongId = TID 0
-           , stTime = (0, 0)
-           , stBitrate = 0
-           , stAudio = (0, 0, 0)
-           , stUpdatingDB = Nothing
-           }
+           , stXfade          = 0
+           , stState          = StateStop
+           , stSong           = 0
+           , stNextsong       = 0
+           , stSongId         = TID 0
+           , stNextsongId     = TID 0
+           , stTime           = (0, 0)
+           , stBitrate        = 0
+           , stAudio          = (0, 0, 0)
+           , stUpdatingDB     = Nothing }
 
 
 data PlayState = StatePlay | StateStop | StatePause
@@ -96,24 +102,27 @@ data SubsysChanged =
 
 
 
-data Track = Track
-    { trackFile :: URI
-    , trackTime :: Maybe Seconds
-    , trackTags :: Tags
-    } deriving (Eq, Show)
+data Track =
+    Track { trackFile :: URI
+          , trackTime :: Maybe Seconds
+          , trackTags :: Tags }
+    
+    deriving (Eq, Show)
 
 
-zeroTrack = Track { trackFile = undefined
-                  , trackTime = Nothing
-                  , trackTags = mkTags [] }
+zeroTrack =
+    Track { trackFile = undefined
+          , trackTime = Nothing
+          , trackTags = mkTags [] }
 
 
 
-data PlaylistTrack = PlaylistTrack
-    { plTrackPos :: PlaylistPos
-    , plTrackId  :: TrackID
-    , plTrack    :: Track
-    } deriving (Eq, Show)
+data PlaylistTrack =
+    PlaylistTrack { plTrackPos :: PlaylistPos
+                  , plTrackId  :: TrackID
+                  , plTrack    :: Track }
+    
+    deriving (Eq, Show)
 
 
 newtype Playlist = Playlist Text
@@ -128,10 +137,12 @@ newtype OutputID = OutputID Int
     deriving (Eq, Show)
 
 
-data Output = Output { outputID      :: OutputID
-                     , outputName    :: Text
-                     , outputEnabled :: Bool }
-        deriving (Eq, Show)
+data Output =
+    Output { outputID      :: OutputID
+           , outputName    :: Text
+           , outputEnabled :: Bool }
+
+    deriving (Eq, Show)
 
 
 
@@ -142,22 +153,23 @@ data AckError = AckNotList | AckArg | AckPassword | AckPermission | AckUnknown
               | AckUpdateAlready | AckPlayerSync | AckExist
 
               | AckUnrecognizedAck
+
     deriving (Eq, Show)
 
 
-ackErrorMap = [ (AckNotList      , 1)
-              , (AckArg          , 2)
-              , (AckPassword     , 3)
-              , (AckPermission   , 4)
-              , (AckUnknown      , 4)
+ackErrorMap = [ (AckNotList       , 1)
+              , (AckArg           , 2)
+              , (AckPassword      , 3)
+              , (AckPermission    , 4)
+              , (AckUnknown       , 4)
 
-              , (AckNoExist      , 50)
-              , (AckPlaylistMax  , 51)
-              , (AckSystem       , 52)
-              , (AckPlaylistLoad , 53)
-              , (AckUpdateAlready, 54)
-              , (AckPlayerSync   , 55)
-              , (AckExist        , 56)
+              , (AckNoExist       , 50)
+              , (AckPlaylistMax   , 51)
+              , (AckSystem        , 52)
+              , (AckPlaylistLoad  , 53)
+              , (AckUpdateAlready , 54)
+              , (AckPlayerSync    , 55)
+              , (AckExist         , 56)
               ]
 
 int2AckErr :: Int -> AckError
@@ -167,9 +179,12 @@ int2AckErr = fromMaybe AckUnrecognizedAck . (`M.lookup` amap)
 
 
 
-data Ack = Ack { ackError :: AckError
-               , ackPosition :: Int
-               , ackCommand :: Maybe String
-               , ackDescription :: String
-               }
+data Ack =
+    Ack { ackError       :: AckError
+        , ackPosition    :: Int
+        , ackCommand     :: Maybe String
+        , ackDescription :: String }
+
     deriving (Eq, Show)
+
+

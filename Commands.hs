@@ -209,6 +209,7 @@ listplaylist = commandWith "listplaylist" decodeURIs
 listplaylistinfo :: Playlist -> Command [Track]
 listplaylistinfo = command "listplaylistinfo"
 
+-- XXX time type.
 listplaylists :: Command [(Playlist, Text)]
 listplaylists = commandWith "listplaylists" decodePlaylists
 
@@ -288,7 +289,7 @@ stickerDelete = command "sticker delete song"
 stickerList :: URI -> Command [(Text, Text)]
 stickerList = commandWith "sticker list song" decodeStickers
 
-stickerFind :: URI -> Text -> Command [(URI, Text, Text)]
+stickerFind :: URI -> Text -> Command [(URI, Text)]
 stickerFind = commandWith "sticker find song" decodeStickersFiles
 
 
