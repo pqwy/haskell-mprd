@@ -23,11 +23,11 @@ module Commands
 
     , stickerGet, stickerSet, stickerDelete, stickerList, stickerFind
 
-    , close, kill, password, ping
+    , unsafeClose, unsafeKill, password, ping
 
     , disableoutput, enableoutput, outputs
 
-    , commands, tagtypes, urlhandlers
+    , commands, notcommands, tagtypes, urlhandlers
 
     ) where
 
@@ -234,7 +234,7 @@ rename = command "rename"
 rm :: Playlist -> Command ()
 rm = command "rm"
 
-save :: Command ()
+save :: Playlist -> Command ()
 save = command "save"
 
 -- }}}
@@ -277,7 +277,7 @@ update = command "update"
 
 -- stickers {{{
 
-stickerGet :: URI -> Text -> Command (Text, Text)
+stickerGet :: URI -> Text -> Command Text
 stickerGet = commandWith "sticker get song" decodeSticker
 
 stickerSet :: URI -> Text -> Text -> Command ()
@@ -297,11 +297,11 @@ stickerFind = commandWith "sticker find song" decodeStickersFiles
 
 -- connection {{{
 
-close, kill, ping :: Command ()
+unsafeClose, unsafeKill, ping :: Command ()
 
-close = command "close"
-kill  = command "kill"
-ping  = command "ping"
+unsafeKill  = command "kill"
+unsafeClose = command "close"
+ping        = command "ping"
 
 password :: String -> Command ()
 password = command "password"
@@ -321,15 +321,16 @@ outputs = command "outputs"
 
 -- reflection {{{
 
-commands :: Command [Text]
+commands :: Command [String]
 commands = commandWith "commands" decodeCommands
 
--- notcommands :: Command [Text] -- ???
+notcommands :: Command [String]
+notcommands = commandWith "notcommands" decodeCommands
 
 tagtypes :: Command [MetaField]
 tagtypes = commandWith "tagtypes" decodeTagTypes
 
-urlhandlers :: Command [Text]
+urlhandlers :: Command [String]
 urlhandlers = commandWith "urlhandlers" decodeURLHandlers
 
 -- decoders???

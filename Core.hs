@@ -4,6 +4,7 @@ module Core
     ( Text, ByteString
     , MetaField, MetaContent, Tagset, hasTag, mkTagset, tagsetTags
     , Tags, mkTags, lookupTag, tags
+    , tag, query
     , MPDError(..), Result
     , MPDConnState(..), zeroState
 
@@ -52,6 +53,10 @@ zeroState = MPDConnState { mpdConn = undefined , mpdTags = mkTagset [] }
 
 data MPDError = DecodeError Int String
               | AckError Ack
+              | ConnLocked
+              | UnknownProtoResponse
+              | DaemonGone
+              | DaemonNotResponding
               | OtherError String
 
     deriving (Eq, Show)
@@ -90,6 +95,12 @@ tags :: Tags -> [(MetaField, MetaContent)]
 tags (Tags m) = M.toAscList m
 
 
+tag :: String -> MetaField
+tag = B.pack
+
+query :: String -> String -> (MetaField, MetaContent)
+query a b = (B.pack a, T.pack b)
+
 
 type Result = Either MPDError
 
@@ -103,14 +114,6 @@ instance Monad Result where
     fail = Left . OtherError
 
 
--- instance MonadPlus Result where
---     Left _ `mplus` b = b
---     a `mplus` b = a
---     
---     mzero = Left (OtherError "mzero!")
-
-
-
 data AckError = AckNotList | AckArg | AckPassword | AckPermission | AckUnknown
 
               | AckNoExist | AckPlaylistMax | AckSystem | AckPlaylistLoad
@@ -121,25 +124,20 @@ data AckError = AckNotList | AckArg | AckPassword | AckPermission | AckUnknown
     deriving (Eq, Show)
 
 
-ackErrorMap = [ (AckNotList       , 1)
-              , (AckArg           , 2)
-              , (AckPassword      , 3)
-              , (AckPermission    , 4)
-              , (AckUnknown       , 4)
-
-              , (AckNoExist       , 50)
-              , (AckPlaylistMax   , 51)
-              , (AckSystem        , 52)
-              , (AckPlaylistLoad  , 53)
-              , (AckUpdateAlready , 54)
-              , (AckPlayerSync    , 55)
-              , (AckExist         , 56)
-              ]
-
 int2AckErr :: Int -> AckError
-int2AckErr = fromMaybe AckUnrecognizedAck . (`M.lookup` amap)
-    where
-        amap = M.fromDistinctAscList ( map (\(a, b) -> (b, a)) ackErrorMap )
+int2AckErr 1  = AckNotList
+int2AckErr 2  = AckArg
+int2AckErr 3  = AckPassword
+int2AckErr 4  = AckPermission
+int2AckErr 5  = AckUnknown
+int2AckErr 50 = AckNoExist
+int2AckErr 51 = AckPlaylistMax
+int2AckErr 52 = AckSystem
+int2AckErr 53 = AckPlaylistLoad
+int2AckErr 54 = AckUpdateAlready
+int2AckErr 55 = AckPlayerSync
+int2AckErr 56 = AckExist
+int2AckErr _  = AckUnrecognizedAck
 
 
 data Ack =
