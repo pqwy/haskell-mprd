@@ -1,4 +1,4 @@
-module Tags
+module Network.MPDMPD.Tags
     ( Text, ByteString
     , MetaField(..), MetaContent
     , tag, Tags, mkTags

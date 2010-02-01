@@ -3,7 +3,7 @@
 {-# LANGUAGE FunctionalDependencies, MultiParamTypeClasses, UndecidableInstances  #-}
 
 
-module Commands
+module Network.MPDMPD.Commands
     ( Command(..), RangeLike
 
     , stats, status, clearerror, currentsong, unsafeIdle
@@ -34,18 +34,20 @@ module Commands
 
 
 
-import Types ( Text, ByteString
-             , MetaField(..), MetaContent
-             , URI, QueryPred, Seconds, PlaylistPos, PlaylistVersion, TrackID, JobID, Output, OutputID
-             , Stats, Status, SubsysChanged, Track, PlaylistTrack, Playlist, Range
-             )
+import Network.MPDMPD.Types
+    ( Text, ByteString
+    , MetaField(..), MetaContent
+    , URI, QueryPred, Seconds, PlaylistPos, PlaylistVersion, TrackID, JobID, Output, OutputID
+    , Stats, Status, SubsysChanged, Track, PlaylistTrack, Playlist, Range
+    )
 
-import Codec ( Decoder, Parameter(..), Response(..), joinParams, (<+>)
+import Network.MPDMPD.Codec
+    ( Decoder, Parameter(..), Response(..), joinParams, (<+>)
 
-             , decodePosIDs, decodeSongsPltime, decodeSingleTags, decodeDirsFiles, decodeDirsTracks
-             , decodeTagTypes, decodeURLHandlers, decodeCommands, decodeURIs, decodePlaylists
-             , decodeSticker, decodeStickers, decodeStickersFiles
-             )
+    , decodePosIDs, decodeSongsPltime, decodeSingleTags, decodeDirsFiles, decodeDirsTracks
+    , decodeTagTypes, decodeURLHandlers, decodeCommands, decodeURIs, decodePlaylists
+    , decodeSticker, decodeStickers, decodeStickersFiles
+    )
 
 
 import Prelude hiding ( repeat )

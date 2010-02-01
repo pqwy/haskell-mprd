@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE PatternGuards, FlexibleInstances, TypeSynonymInstances, OverlappingInstances  #-}
 
-module Codec
+module Network.MPDMPD.Codec
     ( Decoder, Parameter(..), Response(..)
     , joinParams, (<+>)
     , bsToString, stringToBs
@@ -14,7 +14,7 @@ module Codec
     ) where
 
 
-import Types
+import Network.MPDMPD.Types
 
 
 import Data.List ( sortBy )
