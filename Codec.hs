@@ -10,7 +10,7 @@ module Codec
     , decodeTagTypes, decodeURLHandlers, decodeCommands, decodeURIs, decodePlaylists
     , decodeSticker, decodeStickers, decodeStickersFiles
 
-    , isAck, isOK, isListOK
+    , isAck, isOK, isListOK, readAck
     ) where
 
 
@@ -106,60 +106,66 @@ infixl 4 <$$>
 (<$$>) = (.) . fmap
 
 
-
 type Decoder a = [ByteString] -> Result a
+
+type Parser = Parsec [ByteString] ()
 
 
 -- class interface {{{
 
+-- "Responses" are types whose parsers are unique. This class therefore exports
+-- all the parsers that can be selected by the type they return alone.
+
 class Response a where decode :: Decoder a
 
+instance Response ()              where decode _ = return ()
 
-instance Response () where decode _ = return ()
+instance Response Stats           where decode = asDecoder parseStats
 
-instance Response Stats where
-    decode = asDecoder parseStats
+instance Response Status          where decode = asDecoder parseStatus
 
-instance Response Status where
-    decode = asDecoder parseStatus
+instance Response [SubsysChanged] where decode = asDecoder parseChangedSubsys
 
-instance Response [SubsysChanged] where
-    decode = asDecoder parseChangedSubsys
+instance Response Track           where decode = asDecoder parseTrack
 
-instance Response Track where
-    decode = asDecoder parseTrack
+instance Response [Track]         where decode = asDecoder parseTracks
 
-instance Response [Track] where
-    decode = asDecoder parseTracks
+instance Response PlaylistTrack   where decode = asDecoder parsePLTrack
 
-instance Response PlaylistTrack where
-    decode = asDecoder parsePLTrack
+instance Response [PlaylistTrack] where decode = asDecoder parsePLTracks
 
-instance Response [PlaylistTrack] where
-    decode = asDecoder parsePLTracks
+instance Response TrackID         where decode = asDecoder (key "Id")
 
-instance Response TrackID where
-    decode = asDecoder (key "Id")
+instance Response JobID           where decode = asDecoder (key "updating_db")
 
-instance Response JobID where
-    decode = asDecoder (key "updating_db")
-
-instance Response [Output] where
-    decode = asDecoder parseOutputs
+instance Response [Output]        where decode = asDecoder parseOutputs
 
 -- }}}
 
-type Parser = Parsec [ByteString] ()
-
 -- payloads {{{
+
+-- A "payload" is a type that can be extracted from the rest of a line that
+-- begins with a "key: ". Handy for the 'key "foo"' construct.
 
 class Payload a where payload :: ByteString -> Parser a
 
-instance Payload ByteString where payload = return
+instance Payload ByteString    where payload = return
 
-instance Payload Text where payload = return . E.decodeUtf8
+instance Payload Text          where payload = return . E.decodeUtf8
 
-instance Payload String where payload = return . bsToString
+instance Payload String        where payload = return . bsToString
+
+instance Payload TrackID       where payload = TID <$$> payload
+
+instance Payload JobID         where payload = JID <$$> payload
+
+instance Payload OutputID      where payload = OutputID <$$> payload
+
+instance Payload Playlist      where payload = Playlist <$$> payload
+
+instance Payload URI           where payload = URI <$$> payload
+
+instance Payload SubsysChanged where payload = parseChangedSubsys1
 
 instance Payload Int where
     payload b =
@@ -170,23 +176,11 @@ instance Payload Int where
 instance Payload Bool where
     payload = fmap (/= 0) . (payload :: ByteString -> Parser Int)
 
-instance Payload TrackID where payload = TID <$$> payload
-
-instance Payload JobID where payload = JID <$$> payload
-
-instance Payload OutputID where payload = OutputID <$$> payload
-
-instance Payload Playlist where payload = Playlist <$$> payload
-
 instance Payload PlayState where
     payload x | x == "play"  = return StatePlay
               | x == "stop"  = return StateStop
               | x == "pause" = return StatePause
               | otherwise    = unexpected (B.unpack x)
-
-instance Payload URI where payload = URI <$$> payload
-
-instance Payload SubsysChanged where payload = parseChangedSubsys1
 
 
 -- }}}
@@ -204,17 +198,7 @@ asDecoder p tx = either (Left . mapError) Right
                                 "unexpected" "eof"
                                 (errorMessages e))
 
-
 posNextLine s _ _ = incSourceLine s 1
-
-
-satisfyLn :: (ByteString -> Bool) -> Parser ByteString
-satisfyLn p = tokenPrim show posNextLine
-                ( \l -> if p l then Just l else Nothing )
-
-line :: Parser ByteString
-line = satisfyLn (const True) <?> "a line of input"
-
 
 splitKeyValue :: ByteString -> Maybe (ByteString, ByteString)
 splitKeyValue t | (k, v) <- split t, B.length v > 2 = Just (k, 2 `B.drop` v)
@@ -222,17 +206,14 @@ splitKeyValue t | (k, v) <- split t, B.length v > 2 = Just (k, 2 `B.drop` v)
     where
         split = B.breakSubstring ": " -- <- B.break?
 
-
 lineKV :: Parser (ByteString, ByteString)
 lineKV = tokenPrim show posNextLine splitKeyValue
                 <?> "'key: val' line"
-
 
 satisfyKey :: (ByteString -> Bool) -> Parser (ByteString, ByteString)
 satisfyKey p = try ( lineKV >>= \x@(k, v) ->
                         if p k then return x else mzero )
                 <?> "some key..."
-
 
 key :: (Payload a) => ByteString -> Parser a
 key x = satisfyKey (== x) >>= payload . snd
@@ -247,12 +228,10 @@ key x = satisfyKey (== x) >>= payload . snd
 bsToString :: ByteString -> String
 bsToString = T.unpack . E.decodeUtf8
 
-
 parseNTuple :: (Payload a) => Int -> ByteString -> Parser [a]
 parseNTuple n =
     payload >=> mapM payload . B.split ':' >=> \l ->
         if length l == n then return l else fail (show n ++ "-place list")
-
 
 parseTrack :: Parser Track
 parseTrack =
@@ -264,7 +243,6 @@ parseTrack =
         mkTrack f tm tg =
             zeroTrack { trackFile = f, trackTime = tm, trackTags = tg } 
     
-
 parseTags :: Parser Tags
 parseTags = loop []
     where
@@ -282,7 +260,6 @@ parseTags = loop []
         -- it is faster.
         tagKey = not . ( `elem` ["file", "directory", "Pos"] )
 
-
 parsePLTrack :: Parser PlaylistTrack
 parsePLTrack = mkPLT <$> parseTrack
                      <*> key "Pos"
@@ -292,13 +269,11 @@ parsePLTrack = mkPLT <$> parseTrack
         mkPLT trk pos id =
             PlaylistTrack { plTrack = trk, plTrackPos = pos, plTrackId = id }
 
-
 parseTracks :: Parser [Track]
 parseTracks = many parseTrack
 
 parsePLTracks :: Parser [PlaylistTrack]
 parsePLTracks = many parsePLTrack
-
 
 parseOutputs :: Parser [Output]
 parseOutputs = many
@@ -307,7 +282,6 @@ parseOutputs = many
                 <*> key "outputenabled" )
     where
         mkOut k n e = Output { outputID = k, outputName = n, outputEnabled = e }
-
 
 parseSticker :: Parser (Text, Text)
 parseSticker = split <$> key "sticker"
@@ -321,45 +295,35 @@ parseSticker = split <$> key "sticker"
 -- decoders (exported) {{{
 
 decodePosIDs :: Decoder [(PlaylistPos, TrackID)]
-decodePosIDs = asDecoder $
-        many ( (,) <$> key "cpos" <*> key "Id" )
-
+decodePosIDs = asDecoder $ many ( (,) <$> key "cpos" <*> key "Id" )
 
 decodeSongsPltime :: Decoder (Int, Seconds)
 decodeSongsPltime = asDecoder ( (,) <$> key "songs" <*> key "playtime" )
 
-
 decodeSingleTags :: ByteString -> Decoder [Text]
 decodeSingleTags = asDecoder . many . key
 
-
 decodeURIs :: Decoder [URI]
 decodeURIs = asDecoder ( many (key "file") )
-
 
 decodeDirsFiles :: Decoder [Either URI URI]
 decodeDirsFiles = asDecoder $
     many (   Left  <$> key "directory"
          <|> Right <$> key "file" )
 
-
 decodeDirsTracks :: Decoder [Either URI Track]
 decodeDirsTracks = asDecoder $
         many (   Left  <$> key "directory"
              <|> Right <$> parseTrack )
 
-
 decodeTagTypes :: Decoder [MetaField]
 decodeTagTypes = asDecoder ( many ( key "tagtype" ) )
 
-
-decodeURLHandlers :: Decoder [Text]
+decodeURLHandlers :: Decoder [String]
 decodeURLHandlers = asDecoder ( many (key "handler") )
 
-
-decodeCommands :: Decoder [Text]
+decodeCommands :: Decoder [String]
 decodeCommands = asDecoder ( many (key "command") )
-
 
 -- XXX last-modified. proper time?
 decodePlaylists :: Decoder [(Playlist, Text)]
@@ -367,16 +331,16 @@ decodePlaylists = asDecoder $
         many ( (,) <$> key "playlist"
                    <*> key "Last-Modified" )
 
-decodeSticker :: Decoder (Text, Text)
-decodeSticker = asDecoder parseSticker
+decodeSticker :: Decoder Text
+decodeSticker = asDecoder (snd <$> parseSticker)
 
 decodeStickers :: Decoder [(Text, Text)]
 decodeStickers = asDecoder (many parseSticker)
 
 decodeStickersFiles :: Decoder [(URI, Text)]
 decodeStickersFiles = asDecoder $
-    many ( wrap <$> key "file"
-                <*> parseSticker )
+        many ( wrap <$> key "file"
+                    <*> parseSticker )
     where
         wrap u (_, v) = (u, v)
 
@@ -494,6 +458,15 @@ isAck    = ( "ACK " `B.isPrefixOf` )
 isListOK = ( == "list_OK" )
 
 
+readAck :: ByteString -> Result Ack
+readAck s = either
+                -- IF we can't manage an ack all bets are probably off,
+                -- but let's push the responsibility for handling that
+                -- gracefully to the client.
+                (\_ -> Left (OtherError "can't parse ack"))
+                Right (parse ackParser "" s)
+
+
 int = read <$> many1 digit
 ackerr = int2AckErr <$> int
 
@@ -502,17 +475,13 @@ between1 a b = between (char a) (char b)
 ackParser :: Parsec ByteString () Ack
 ackParser = do
     string "ACK "
-
     (e, p) <- between1 '[' ']'
-                ((,) <$> (ackerr <* char '@') <*> int)
-    spaces
-
-    cmd <- between1 '{' '}'
-            ( many ( noneOf "}" ) )
+                ((,) <$> ackerr <* char '@' <*> int)
+              <* spaces
+    cmd <- between1 '{' '}' ( many ( noneOf "}" ) )
+           <* spaces
     let cmd' | null cmd  = Nothing
              | otherwise = Just cmd
-    spaces
-
     tail <- bsToString <$> getInput
 
     return  Ack { ackError = e
