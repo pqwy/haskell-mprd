@@ -14,7 +14,6 @@ module Codec
     ) where
 
 
-import Core
 import Types
 
 
@@ -27,6 +26,7 @@ import Control.Applicative hiding ( Alternative(..), many )
 
 import qualified Data.Text as T ( cons, snoc, pack, unpack )
 import qualified Data.Text.Encoding as E ( decodeUtf8, encodeUtf8 )
+import Data.ByteString ( ByteString )
 import qualified Data.ByteString.Char8 as B
 
 import Text.Parsec
@@ -68,7 +68,7 @@ instance Parameter URI where
     encode (URI u) = encode u
 
 instance Parameter QueryPred where
-    encode (t, v) = joinParams [t, encode v]
+    encode (MF t, v) = joinParams [t, encode v]
 
 instance Parameter OutputID where
     encode (OutputID o) = encode o
@@ -150,6 +150,8 @@ instance Response [Output]        where decode = asDecoder parseOutputs
 class Payload a where payload :: ByteString -> Parser a
 
 instance Payload ByteString    where payload = return
+
+instance Payload MetaField     where payload = return . MF
 
 instance Payload Text          where payload = return . E.decodeUtf8
 
@@ -247,7 +249,7 @@ parseTags :: Parser Tags
 parseTags = loop []
     where
         loop acc = ( satisfyKey tagKey >>= \(k, v) ->
-                        loop ((k, E.decodeUtf8 v) : acc) )
+                        loop ((MF k, E.decodeUtf8 v) : acc) )
                <|> pure (mkTags acc)
 
         -- tagKey = hasTag ts
@@ -300,7 +302,7 @@ decodePosIDs = asDecoder $ many ( (,) <$> key "cpos" <*> key "Id" )
 decodeSongsPltime :: Decoder (Int, Seconds)
 decodeSongsPltime = asDecoder ( (,) <$> key "songs" <*> key "playtime" )
 
-decodeSingleTags :: ByteString -> Decoder [Text]
+decodeSingleTags :: ByteString -> Decoder [MetaContent]
 decodeSingleTags = asDecoder . many . key
 
 decodeURIs :: Decoder [URI]
@@ -460,7 +462,7 @@ isListOK = ( == "list_OK" )
 
 readAck :: ByteString -> Result Ack
 readAck s = either
-                -- IF we can't manage an ack all bets are probably off,
+                -- If we can't manage an ack all bets are probably off,
                 -- but let's push the responsibility for handling that
                 -- gracefully to the client.
                 (\_ -> Left (OtherError "can't parse ack"))

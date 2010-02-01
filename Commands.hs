@@ -34,9 +34,9 @@ module Commands
 
 
 
-import Core ( Text, ByteString, MetaField, MetaContent )
-
-import Types ( URI, QueryPred, Seconds, PlaylistPos, PlaylistVersion, TrackID, JobID, Output, OutputID
+import Types ( Text, ByteString
+             , MetaField(..), MetaContent
+             , URI, QueryPred, Seconds, PlaylistPos, PlaylistVersion, TrackID, JobID, Output, OutputID
              , Stats, Status, SubsysChanged, Track, PlaylistTrack, Playlist, Range
              )
 
@@ -250,7 +250,7 @@ find = command "find"
 -- findadd??
 
 list :: MetaField -> Command [MetaContent]
-list t = Command (joinParams ["list", t]) (decodeSingleTags t)
+list (MF t) = Command (joinParams ["list", t]) (decodeSingleTags t)
 
 listAlbumsByArtist :: MetaContent -> Command [MetaContent]
 listAlbumsByArtist a =

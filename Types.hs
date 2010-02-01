@@ -1,12 +1,92 @@
 {-# LANGUAGE TypeSynonymInstances  #-}
 
-module Types where
+module Types
+    ( Text, ByteString
+    
+    , Result
+    , MPDError(..), AckError(..), Ack(..)
+    , int2AckErr
+    
+    , module Tags
+    , QueryPred, URI(..)
+    , queryStr
+
+    , Seconds, PlaylistPos, PlaylistVersion(..), TrackID(..), JobID(..), OutputID(..)
+    , Stats(..), Status(..), PlayState(..), SubsysChanged(..)
+    , Track(..), PlaylistTrack(..), Playlist(..), Range(..), Output(..)
+
+    , uri, lkpTag
+    , zeroStats, zeroStatus, zeroTrack
+
+    ) where
 
 
-import Core
+import Tags ( MetaField(..), MetaContent, Tags, mkTags )
 
-import Data.Text ( pack )
+import Data.Text ( Text, pack )
+import Data.ByteString ( ByteString )
 import qualified Data.Map as M
+
+
+
+
+
+type Result = Either MPDError
+
+instance Monad Result where
+    return = Right
+
+    Right x >>= f = f x
+    Left x  >>= _ = Left x
+
+    fail = Left . OtherError
+
+
+data MPDError = DecodeError Int String
+              | AckError Ack
+              | ConnLocked
+              | UnknownProtoResponse
+              | DaemonGone
+              | DaemonNotResponding
+              | OtherError String
+
+    deriving (Eq, Show)
+
+
+data AckError = AckNotList | AckArg | AckPassword | AckPermission | AckUnknown
+
+              | AckNoExist | AckPlaylistMax | AckSystem | AckPlaylistLoad
+              | AckUpdateAlready | AckPlayerSync | AckExist
+
+              | AckUnrecognizedAck
+
+    deriving (Eq, Show)
+
+
+int2AckErr :: Int -> AckError
+int2AckErr 1  = AckNotList
+int2AckErr 2  = AckArg
+int2AckErr 3  = AckPassword
+int2AckErr 4  = AckPermission
+int2AckErr 5  = AckUnknown
+int2AckErr 50 = AckNoExist
+int2AckErr 51 = AckPlaylistMax
+int2AckErr 52 = AckSystem
+int2AckErr 53 = AckPlaylistLoad
+int2AckErr 54 = AckUpdateAlready
+int2AckErr 55 = AckPlayerSync
+int2AckErr 56 = AckExist
+int2AckErr _  = AckUnrecognizedAck
+
+
+data Ack =
+    Ack { ackError       :: AckError
+        , ackPosition    :: Int
+        , ackCommand     :: Maybe String
+        , ackDescription :: String }
+
+    deriving (Eq, Show)
+
 
 
 
@@ -19,6 +99,9 @@ uri = URI . pack
 
 
 type QueryPred = (MetaField, MetaContent)
+
+queryStr :: MetaField -> String -> QueryPred
+queryStr f s = (f, pack s)
 
 
 type Seconds = Int
@@ -119,6 +202,8 @@ zeroTrack =
           , trackTime = Nothing
           , trackTags = mkTags [] }
 
+lkpTag :: MetaField -> Track -> Maybe MetaContent
+lkpTag f t = f `M.lookup` trackTags t 
 
 
 data PlaylistTrack =

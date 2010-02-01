@@ -2,22 +2,23 @@
 
 module Connection
     ( MPDConn
+    , protocolVersion
     , connect, connectEx, cmd, cmds, cmds_
     , kill, close
     ) where
 
 
-import Core
 import Types
 import Commands
 import Codec ( Decoder, isOK, isListOK, isAck, readAck )
+import qualified Tags as T
 
 
 import Control.Monad
 import Control.Applicative
 
 import qualified Data.ByteString.Char8 as B
-import qualified Data.Text as T ( pack )
+import qualified Data.Text as TX ( pack )
 
 import System.IO
 import System.IO.Error hiding ( try, catch )
@@ -32,11 +33,13 @@ import GHC.IOBase ( IOErrorType(..), IOException(..) )
 
 type MPDVar = MVar (Either (IO ()) Handle)
 
-newtype MPDConn = MPDConn MPDVar
+data MPDConn = MPDConn String MPDVar
 
 instance Show MPDConn where
-    show _ = "<MPD connection>"
+    show (MPDConn v _) = "<MPD connection, ver " ++ v ++ ">"
 
+protocolVersion :: MPDConn -> String
+protocolVersion (MPDConn v _) = v
 
 
 
@@ -56,15 +59,15 @@ connectEx host port pass = do
          Left e | isDoesNotExistError e -> return (Left DaemonNotResponding)
                 | otherwise             -> throwIO e
 
-    where prepareHandle h =
-              -- hSetBuffering h LineBuffering
-              validateProto <$> B.hGetLine h >>= \proto' ->
-                  case proto' of
-                       Nothing    -> return (Left UnknownProtoResponse)
-                       Just proto -> MPDConn <$> newMVar (Right h) >>= \mpd ->
-                            case pass of
-                                 Nothing -> return (Right mpd)
-                                 Just p  -> (mpd <$) <$> cmd mpd (password p)
+    where prepareHandle h = do
+              hSetBuffering h (BlockBuffering Nothing)
+              proto' <- validateProto <$> B.hGetLine h
+              case proto' of
+                   Nothing    -> return (Left UnknownProtoResponse)
+                   Just proto -> MPDConn proto <$> newMVar (Right h) >>= \mpd ->
+                       case pass of
+                            Nothing -> return (Right mpd)
+                            Just p  -> (mpd <$) <$> cmd mpd (password p)
 
 
 validateProto :: ByteString -> Maybe String
@@ -76,7 +79,7 @@ validateProto s | "OK MPD " `B.isPrefixOf` s = Just (B.unpack $ B.drop 7 s)
 
 
 takeConnectionEx :: (MPDVar -> Handle -> IO (Result a)) -> MPDConn -> IO (Result a)
-takeConnectionEx act c@(MPDConn var) = do
+takeConnectionEx act c@(MPDConn _ var) = do
     x <- takeMVar var
     ( case x of
            Left _  -> return (Left ConnLocked)
@@ -174,12 +177,14 @@ cmds_ c cs = (() <$) <$> cmds c cs
 
 
 
+chunkBy :: (Show a) => (a -> Bool) -> [a] -> [[a]]
 chunkBy f [] = []
-chunkby f xs = go xs (\a b -> a : chunkBy f b)
+chunkBy f xs = go xs (\a b -> a : chunkBy f b)
     where
         go [] k                 = k [] []
         go (x:xs) k | f x       = k [] xs
                     | otherwise = go xs (k . (x:))
+
 
 chunkBy' f [] = []
 chunkBy' f xs =

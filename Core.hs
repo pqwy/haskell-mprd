@@ -2,11 +2,11 @@
 
 module Core
     ( Text, ByteString
-    , MetaField, MetaContent, Tagset, hasTag, mkTagset, tagsetTags
-    , Tags, mkTags, lookupTag, tags
-    , tag, query
+    -- , MetaField, MetaContent -- , Tagset, hasTag, mkTagset, tagsetTags
+    -- , Tags, mkTags, lookupTag, tags
+    -- , tag, query
     , MPDError(..), Result
-    , MPDConnState(..), zeroState
+    -- , MPDConnState(..), zeroState
 
     , Ack(..), AckError(..), int2AckErr
     -- , deftags
@@ -30,12 +30,12 @@ import qualified Data.Map as M
 import System.IO ( Handle )
 
 
-data MPDConnState = MPDConnState
-        { mpdConn :: Handle
-        , mpdTags :: Tagset
-        }
-
-zeroState = MPDConnState { mpdConn = undefined , mpdTags = mkTagset [] }
+-- data MPDConnState = MPDConnState
+--         { mpdConn :: Handle
+--         , mpdTags :: Tagset
+--         }
+-- 
+-- zeroState = MPDConnState { mpdConn = undefined , mpdTags = mkTagset [] }
 
 -- deftags :: [ByteString]
 -- deftags =
@@ -67,85 +67,85 @@ type MetaField = ByteString
 type MetaContent = Text
 
 
-newtype Tagset = Tagset (S.Set MetaField)
-    deriving (Eq, Show)
+-- newtype Tagset = Tagset (S.Set MetaField)
+--     deriving (Eq, Show)
+-- 
+-- 
+-- hasTag (Tagset s) x = x `S.member` s
+-- 
+-- mkTagset :: [MetaField] -> Tagset
+-- mkTagset = Tagset . S.fromDistinctAscList . sort
+-- 
+-- tagsetTags :: Tagset -> [MetaField]
+-- tagsetTags (Tagset s) = S.toAscList s
+-- 
 
 
-hasTag (Tagset s) x = x `S.member` s
+-- newtype Tags = Tags (M.Map MetaField MetaContent)
+--     deriving (Eq, Show)
+-- 
+-- 
+-- mkTags :: [(MetaField, MetaContent)] -> Tags
+-- mkTags = Tags . M.fromAscList . sortBy (compare `on` fst)
 
-mkTagset :: [MetaField] -> Tagset
-mkTagset = Tagset . S.fromDistinctAscList . sort
+-- lookupTag :: MetaField -> Tags -> Maybe MetaContent
+-- lookupTag t (Tags m) = M.lookup t m
 
-tagsetTags :: Tagset -> [MetaField]
-tagsetTags (Tagset s) = S.toAscList s
-
-
-
-newtype Tags = Tags (M.Map MetaField MetaContent)
-    deriving (Eq, Show)
-
-
-mkTags :: [(MetaField, MetaContent)] -> Tags
-mkTags = Tags . M.fromAscList . sortBy (compare `on` fst)
-
-lookupTag :: MetaField -> Tags -> Maybe MetaContent
-lookupTag t (Tags m) = M.lookup t m
-
-tags :: Tags -> [(MetaField, MetaContent)]
-tags (Tags m) = M.toAscList m
+-- tags :: Tags -> [(MetaField, MetaContent)]
+-- tags (Tags m) = M.toAscList m
 
 
-tag :: String -> MetaField
-tag = B.pack
+-- tag :: String -> MetaField
+-- tag = B.pack
 
-query :: String -> String -> (MetaField, MetaContent)
-query a b = (B.pack a, T.pack b)
-
-
-type Result = Either MPDError
+-- query :: String -> String -> (MetaField, MetaContent)
+-- query a b = (B.pack a, T.pack b)
 
 
-instance Monad Result where
-    return = Right
-
-    Right x >>= f = f x
-    Left x  >>= _ = Left x
-
-    fail = Left . OtherError
-
-
-data AckError = AckNotList | AckArg | AckPassword | AckPermission | AckUnknown
-
-              | AckNoExist | AckPlaylistMax | AckSystem | AckPlaylistLoad
-              | AckUpdateAlready | AckPlayerSync | AckExist
-
-              | AckUnrecognizedAck
-
-    deriving (Eq, Show)
+-- type Result = Either MPDError
+-- 
+-- 
+-- instance Monad Result where
+--     return = Right
+-- 
+--     Right x >>= f = f x
+--     Left x  >>= _ = Left x
+-- 
+--     fail = Left . OtherError
 
 
-int2AckErr :: Int -> AckError
-int2AckErr 1  = AckNotList
-int2AckErr 2  = AckArg
-int2AckErr 3  = AckPassword
-int2AckErr 4  = AckPermission
-int2AckErr 5  = AckUnknown
-int2AckErr 50 = AckNoExist
-int2AckErr 51 = AckPlaylistMax
-int2AckErr 52 = AckSystem
-int2AckErr 53 = AckPlaylistLoad
-int2AckErr 54 = AckUpdateAlready
-int2AckErr 55 = AckPlayerSync
-int2AckErr 56 = AckExist
-int2AckErr _  = AckUnrecognizedAck
-
-
-data Ack =
-    Ack { ackError       :: AckError
-        , ackPosition    :: Int
-        , ackCommand     :: Maybe String
-        , ackDescription :: String }
-
-    deriving (Eq, Show)
+-- data AckError = AckNotList | AckArg | AckPassword | AckPermission | AckUnknown
+-- 
+--               | AckNoExist | AckPlaylistMax | AckSystem | AckPlaylistLoad
+--               | AckUpdateAlready | AckPlayerSync | AckExist
+-- 
+--               | AckUnrecognizedAck
+-- 
+--     deriving (Eq, Show)
+-- 
+-- 
+-- int2AckErr :: Int -> AckError
+-- int2AckErr 1  = AckNotList
+-- int2AckErr 2  = AckArg
+-- int2AckErr 3  = AckPassword
+-- int2AckErr 4  = AckPermission
+-- int2AckErr 5  = AckUnknown
+-- int2AckErr 50 = AckNoExist
+-- int2AckErr 51 = AckPlaylistMax
+-- int2AckErr 52 = AckSystem
+-- int2AckErr 53 = AckPlaylistLoad
+-- int2AckErr 54 = AckUpdateAlready
+-- int2AckErr 55 = AckPlayerSync
+-- int2AckErr 56 = AckExist
+-- int2AckErr _  = AckUnrecognizedAck
+-- 
+-- 
+-- data Ack =
+--     Ack { ackError       :: AckError
+--         , ackPosition    :: Int
+--         , ackCommand     :: Maybe String
+--         , ackDescription :: String }
+-- 
+--     deriving (Eq, Show)
 
 
