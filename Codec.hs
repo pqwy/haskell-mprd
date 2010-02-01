@@ -58,26 +58,21 @@ instance Parameter TrackID where encode (TID x) = encode x
 
 instance Parameter PlaylistVersion where encode (PLV x) = encode x
 
-instance Parameter Text where
-    encode = E.encodeUtf8 . quotes
+instance Parameter Text where encode = E.encodeUtf8 . quotes
 
 instance Parameter Range where
     encode (a :/: b) = B.intercalate ":" [encode a, encode b]
 
-instance Parameter URI where
-    encode (URI u) = encode u
+instance Parameter URI where encode (URI u) = encode u
 
 instance Parameter QueryPred where
     encode (MF t, v) = joinParams [t, encode v]
 
-instance Parameter OutputID where
-    encode (OutputID o) = encode o
+instance Parameter OutputID where encode (OutputID o) = encode o
 
-instance Parameter SubsysChanged where
-    encode = encodeChangedSubsys
+instance Parameter SubsysChanged where encode = encodeChangedSubsys
 
-instance Parameter Playlist where
-    encode (Playlist p) = encode p
+instance Parameter Playlist where encode (Playlist p) = encode p
 
 
 joinParams :: [ByteString] -> ByteString
@@ -203,8 +198,8 @@ asDecoder p tx = either (Left . mapError) Right
 posNextLine s _ _ = incSourceLine s 1
 
 splitKeyValue :: ByteString -> Maybe (ByteString, ByteString)
-splitKeyValue t | (k, v) <- split t, B.length v > 2 = Just (k, 2 `B.drop` v)
-                | otherwise                         = Nothing
+splitKeyValue t | (k, v) <- split t, B.length v >= 2 = Just (k, 2 `B.drop` v)
+                | otherwise                          = Nothing
     where
         split = B.breakSubstring ": " -- <- B.break?
 
