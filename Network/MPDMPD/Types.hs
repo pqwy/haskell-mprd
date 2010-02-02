@@ -140,8 +140,8 @@ data Status =
     Status { stRepeat, stRandom, stSingle, stConsume :: Bool
 
            , stVolume               :: Maybe Int
-           , stPlaylist             :: PlaylistVersion
-           , stPlaylistLength       :: Int
+           , stPLVer                :: PlaylistVersion
+           , stPLLen                :: Int
            , stXfade                :: Seconds
            , stState                :: PlayState
            , stSong, stNextsong     :: PlaylistPos
@@ -158,19 +158,19 @@ zeroStatus :: Status
 zeroStatus =
     Status { stRepeat = False, stRandom = False, stSingle = False, stConsume = False
 
-           , stVolume         = Nothing
-           , stPlaylist       = PLV 0
-           , stPlaylistLength = 0
-           , stXfade          = 0
-           , stState          = StateStop
-           , stSong           = 0
-           , stNextsong       = 0
-           , stSongId         = TID 0
-           , stNextsongId     = TID 0
-           , stTime           = (0, 0)
-           , stBitrate        = 0
-           , stAudio          = (0, 0, 0)
-           , stUpdatingDB     = Nothing }
+           , stVolume     = Nothing
+           , stPLVer      = PLV 0
+           , stPLLen      = 0
+           , stXfade      = 0
+           , stState      = StateStop
+           , stSong       = 0
+           , stNextsong   = 0
+           , stSongId     = TID 0
+           , stNextsongId = TID 0
+           , stTime       = (0, 0)
+           , stBitrate    = 0
+           , stAudio      = (0, 0, 0)
+           , stUpdatingDB = Nothing }
 
 
 data PlayState = StatePlay | StateStop | StatePause

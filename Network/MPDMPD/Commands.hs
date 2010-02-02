@@ -37,8 +37,8 @@ module Network.MPDMPD.Commands
 import Network.MPDMPD.Types
     ( Text, ByteString
     , MetaField(..), MetaContent
-    , URI, QueryPred, Seconds, PlaylistPos, PlaylistVersion, TrackID, JobID, Output, OutputID
-    , Stats, Status, SubsysChanged, Track, PlaylistTrack, Playlist, Range
+    , URI(..), QueryPred, Seconds, PlaylistPos, PlaylistVersion(..), TrackID(..), JobID(..)
+    , Output(..), OutputID(..), Stats, Status, SubsysChanged, Track, PlaylistTrack, Playlist, Range
     )
 
 import Network.MPDMPD.Codec
@@ -63,7 +63,6 @@ instance RangeLike PlaylistPos where
 instance RangeLike Range where
 
 
-
 class CmdBuilder c a | c -> a where
     commandWith :: ByteString -> Decoder a -> c
 
@@ -76,7 +75,6 @@ instance (CmdBuilder c a, Parameter p) => CmdBuilder (p -> c) a where
 
 command :: (CmdBuilder a b, Response b) => ByteString -> a
 command s = commandWith s decode
-
 
 
 -- querying {{{
@@ -111,8 +109,7 @@ crossfade, setvol :: Int -> Command ()
 
 crossfade = command "crossfade"
 
-setvol x | x >= 0 && x <= 100 = command "setvol" x
-         | otherwise = error ("setvol: allowed range 0-100, got " ++ show x)
+setvol x  = command "setvol" x
 
 -- }}}
 
@@ -335,3 +332,4 @@ urlhandlers = commandWith "urlhandlers" decodeURLHandlers
 -- }}}
 
 
+-- vim:set fdm=marker:
