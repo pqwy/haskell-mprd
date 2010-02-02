@@ -1,0 +1,32 @@
+name:           libmpdmpd
+version:        0.1
+synopsis:       MPD client library
+description:    An alternative implementation of the MPD protocol.
+license:        BSD3
+author:         David Kaloper <david@pako.st>
+copyright:      2010 David Kaloper
+category:       Network, Sound
+cabal-version:  >= 1.2
+build-type:     Simple
+
+library
+  exposed-modules:
+    Network.MPDMPD
+    Network.MPDMPD.Tags
+  other-modules:
+    Network.MPDMPD.Types
+    Network.MPDMPD.Codec
+    Network.MPDMPD.Commands
+    Network.MPDMPD.Connection
+  
+  build-depends:
+    base        >= 4,
+    text        >= 0.7,
+    bytestring  >= 0.9,
+    containers  >= 0.2,
+    parsec      >= 3,
+    network     >= 2.2
+
+  ghc-prof-options: -auto-all
+  ghc-options: -Wall -O2
+
