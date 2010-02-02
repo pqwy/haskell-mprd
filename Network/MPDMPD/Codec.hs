@@ -26,7 +26,6 @@ import Control.Applicative hiding ( Alternative(..), many )
 
 import qualified Data.Text as T ( cons, snoc, pack, unpack )
 import qualified Data.Text.Encoding as E ( decodeUtf8, encodeUtf8 )
-import Data.ByteString ( ByteString )
 import qualified Data.ByteString.Char8 as B
 
 import Text.Parsec
@@ -41,6 +40,11 @@ import Text.Parsec.ByteString ()
 -- co {{{
 
 class Parameter a where encode :: a -> ByteString
+
+
+instance (Parameter a) => Parameter (Maybe a) where
+    encode Nothing  = ""
+    encode (Just x) = encode x
 
 
 instance Parameter String where encode = stringToBs
@@ -167,7 +171,7 @@ instance Payload SubsysChanged where payload = parseChangedSubsys1
 instance Payload Int where
     payload b =
         case B.readInt b of
-             Just (a, b) | B.null b -> return a
+             Just (x, y) | B.null y -> return x
              _                      -> unexpected (B.unpack b)
 
 instance Payload Bool where
@@ -195,6 +199,7 @@ asDecoder p tx = either (Left . mapError) Right
                                 "unexpected" "eof"
                                 (errorMessages e))
 
+posNextLine ::  SourcePos -> a -> b -> SourcePos
 posNextLine s _ _ = incSourceLine s 1
 
 splitKeyValue :: ByteString -> Maybe (ByteString, ByteString)
@@ -208,7 +213,7 @@ lineKV = tokenPrim show posNextLine splitKeyValue
                 <?> "'key: val' line"
 
 satisfyKey :: (ByteString -> Bool) -> Parser (ByteString, ByteString)
-satisfyKey p = try ( lineKV >>= \x@(k, v) ->
+satisfyKey p = try ( lineKV >>= \x@(k, _) ->
                         if p k then return x else mzero )
                 <?> "some key..."
 
@@ -263,8 +268,8 @@ parsePLTrack = mkPLT <$> parseTrack
                      <*> key "Id"
 
     where
-        mkPLT trk pos id =
-            PlaylistTrack { plTrack = trk, plTrackPos = pos, plTrackId = id }
+        mkPLT trk pos tid =
+            PlaylistTrack { plTrack = trk, plTrackPos = pos, plTrackId = tid }
 
 parseTracks :: Parser [Track]
 parseTracks = many parseTrack
@@ -428,6 +433,9 @@ coDecMap m = ( \b -> case b `M.lookup` M.fromAscList (sort m) of
         swap = map (\(a, b) -> (b, a))
 
 
+parseChangedSubsys1 :: ByteString -> Parser SubsysChanged
+encodeChangedSubsys :: SubsysChanged -> ByteString
+
 ( parseChangedSubsys1, encodeChangedSubsys ) = coDecMap
 
         [ ("database"       , ChangedDatabase      ) 
@@ -440,6 +448,7 @@ coDecMap m = ( \b -> case b `M.lookup` M.fromAscList (sort m) of
         , ("update"         , ChangedUpdate        ) 
         ]
 
+parseChangedSubsys :: Parser [SubsysChanged]
 parseChangedSubsys = many ( key "changed" )
 
 -- }}}
@@ -464,9 +473,13 @@ readAck s = either
                 Right (parse ackParser "" s)
 
 
+int :: Parsec ByteString u Int
 int = read <$> many1 digit
+
+ackerr :: Parsec ByteString u AckError
 ackerr = int2AckErr <$> int
 
+between1 :: Char -> Char -> Parsec ByteString u a -> Parsec ByteString u a
 between1 a b = between (char a) (char b)
 
 ackParser :: Parsec ByteString () Ack
@@ -479,12 +492,12 @@ ackParser = do
            <* spaces
     let cmd' | null cmd  = Nothing
              | otherwise = Just cmd
-    tail <- bsToString <$> getInput
+    rest <- bsToString <$> getInput
 
     return  Ack { ackError = e
                 , ackPosition = p
                 , ackCommand = cmd'
-                , ackDescription = tail }
+                , ackDescription = rest }
 
 
 -- }}}

@@ -127,6 +127,7 @@ data Stats =
     deriving (Eq, Show)
 
 
+zeroStats :: Stats
 zeroStats = 
     Stats { stsArtists  = 0, stsAlbums   = 0, stsSongs      = 0
           , stsUptime   = 0, stsPlaytime = 0, stsDbPlaytime = 0
@@ -153,6 +154,7 @@ data Status =
     deriving (Eq, Show)
 
 
+zeroStatus :: Status
 zeroStatus =
     Status { stRepeat = False, stRandom = False, stSingle = False, stConsume = False
 
@@ -197,6 +199,7 @@ data Track =
     deriving (Eq, Show)
 
 
+zeroTrack :: Track
 zeroTrack =
     Track { trackFile = undefined
           , trackTime = Nothing

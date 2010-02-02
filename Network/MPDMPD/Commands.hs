@@ -64,11 +64,6 @@ instance RangeLike Range where
 
 
 
-instance (Parameter a) => Parameter (Maybe a) where
-    encode Nothing  = ""
-    encode (Just x) = encode x
-
-
 class CmdBuilder c a | c -> a where
     commandWith :: ByteString -> Decoder a -> c
 

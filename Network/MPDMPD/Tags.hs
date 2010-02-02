@@ -1,5 +1,5 @@
 module Network.MPDMPD.Tags
-    ( Text, ByteString
+    ( Text, B.ByteString
     , MetaField(..), MetaContent
     , tag, Tags, mkTags
 
@@ -15,13 +15,12 @@ import qualified Data.Map as M
 
 import Data.Text ( Text )
 import qualified Data.Text as T
-import Data.ByteString ( ByteString )
 import qualified Data.ByteString.Char8 as B
 
 
 type MetaContent = Text
 
-newtype MetaField = MF ByteString
+newtype MetaField = MF B.ByteString
     deriving (Eq, Ord)
 
 instance Show MetaField where
@@ -31,6 +30,9 @@ instance Show MetaField where
 tag :: String -> MetaField
 tag = MF . B.pack
 
+
+
+artist, album, albumArtist, title, track, name, genre, date, composer, performer, disc :: MetaField
 
 artist      = tag "Artist"
 album       = tag "Album"

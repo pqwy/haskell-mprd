@@ -11,14 +11,12 @@ module Network.MPDMPD.Connection
 import Network.MPDMPD.Types
 import Network.MPDMPD.Commands
 import Network.MPDMPD.Codec ( Decoder, isOK, isListOK, isAck, readAck )
-import qualified Network.MPDMPD.Tags as T
 
 
 import Control.Monad
 import Control.Applicative
 
 import qualified Data.ByteString.Char8 as B
-import qualified Data.Text as TX ( pack )
 
 import System.IO
 import System.IO.Error hiding ( try, catch )
@@ -79,7 +77,7 @@ validateProto s | "OK MPD " `B.isPrefixOf` s = Just (B.unpack $ B.drop 7 s)
 
 
 takeConnectionEx :: (MPDVar -> Handle -> IO (Result a)) -> MPDConn -> IO (Result a)
-takeConnectionEx act c@(MPDConn _ var) = do
+takeConnectionEx act (MPDConn _ var) = do
     x <- takeMVar var
     ( case x of
            Left _  -> return (Left ConnLocked)
@@ -125,19 +123,19 @@ getResponseBlock h =
                                | otherwise -> collect $ \a b -> k (l:a) b
 
 
-getResponseBlock' :: Handle -> IO (Result ([ByteString], Maybe Ack))
-getResponseBlock' h = B.hGetLine h >>= \l ->
-        case () of
-             _ | isOK l    -> return (return ([], Nothing))
-               | isAck l   -> return (readAck l >>= \a -> return ([], Just a))
-               | otherwise -> (first (l:) <$>) <$> getResponseBlock' h
+-- getResponseBlock' :: Handle -> IO (Result ([ByteString], Maybe Ack))
+-- getResponseBlock' h = B.hGetLine h >>= \l ->
+--         case () of
+--              _ | isOK l    -> return (return ([], Nothing))
+--                | isAck l   -> return (readAck l >>= \a -> return ([], Just a))
+--                | otherwise -> (first (l:) <$>) <$> getResponseBlock' h
 
 
 
 readResponse :: Handle -> Decoder a -> IO (Result a)
 readResponse h dec = getResponseBlock h >>= \res ->
-        return $ res >>= \lines ->
-                    case lines of
+        return $ res >>= \lns ->
+                    case lns of
                          (bs, Nothing) -> dec bs
                          (_,  Just a)  -> Left (AckError a)
 
@@ -154,9 +152,9 @@ cmd c (Command txt dec) = flip usingHandle c $ \h ->
 
 readResponses :: Handle -> [Decoder a] -> IO (Result ([a], Maybe Ack))
 readResponses h decs = getResponseBlock h >>= \res ->
-        return $ res >>= \(lines, mack) ->
+        return $ res >>= \(lns, mack) ->
             (\l -> (l, mack)) <$>
-                sequence (zipWith ($) decs (chunkBy isListOK lines))
+                sequence (zipWith ($) decs (chunkBy isListOK lns))
 
 
 cmds :: MPDConn -> [Command a] -> IO (Result ([a], Maybe Ack))
@@ -178,19 +176,19 @@ cmds_ c cs = (() <$) <$> cmds c cs
 
 
 chunkBy :: (Show a) => (a -> Bool) -> [a] -> [[a]]
-chunkBy f [] = []
-chunkBy f xs = go xs (\a b -> a : chunkBy f b)
+chunkBy _ [] = []
+chunkBy f l = go l (\a b -> a : chunkBy f b)
     where
         go [] k                 = k [] []
         go (x:xs) k | f x       = k [] xs
                     | otherwise = go xs (k . (x:))
 
 
-chunkBy' f [] = []
-chunkBy' f xs =
-    case f `break` xs of
-         (a, [])  -> [a]
-         (a, _:b) -> chunkBy' f b
+-- chunkBy' f [] = []
+-- chunkBy' f xs =
+--     case f `break` xs of
+--          (a, [])  -> [a]
+--          (a, _:b) -> chunkBy' f b
 
 -- idle :: MPDConn -> IO (Result [SubsysChanged])
 -- idle = usingHandle $ \h ->
@@ -222,6 +220,6 @@ kill = killingCmd unsafeKill
 
 
 
-first :: (a -> b) -> (a, c) -> (b, c)
-first f (a, c) = (f a, c)
+-- first :: (a -> b) -> (a, c) -> (b, c)
+-- first f (a, c) = (f a, c)
 
