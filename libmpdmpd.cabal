@@ -24,7 +24,6 @@ library
     text        >= 0.7,
     bytestring  >= 0.9,
     containers  >= 0.2,
-    parsec      >= 3,
     network     >= 2.2
 
   ghc-prof-options: -auto-all

@@ -1,7 +1,7 @@
 module Main where
 
 import Network.MPDMPD.Connection
-import Network.MPDMPD.Commands2
+import Network.MPDMPD.Commands
 
 import System.Environment
 

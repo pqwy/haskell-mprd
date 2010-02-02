@@ -2,7 +2,7 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances  #-}
 {-# LANGUAGE BangPatterns  #-}
 
-module Network.MPDMPD.Codec2
+module Network.MPDMPD.Codec
     ( Decoder, Parameter(..)
     , joinParams, (<+>), bsToString, stringToBs
 
@@ -15,7 +15,6 @@ module Network.MPDMPD.Codec2
     , isOK, isAck, isListOK, readAck
     ) where
 
-import Network.MPDMPD.Tags
 import Network.MPDMPD.Types
 
 import Data.Maybe
@@ -193,8 +192,8 @@ decodeOutputs :: Decoder [Output]
 decodeOutputs = export $ many $ mkOut <$> (OutputID <$> key "outputid")
                                       <*> key "outputname"
                                       <*> key "outputenabled"
-    where mkOut id nm en =
-              Output { outputID = id, outputName = nm, outputEnabled = en }
+    where mkOut tid nm en =
+              Output { outputID = tid, outputName = nm, outputEnabled = en }
 
 
 decodePosIDs :: Decoder [(PlaylistPos, TrackID)]

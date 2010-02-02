@@ -10,8 +10,8 @@ module Network.MPDMPD.Connection
 
 
 import Network.MPDMPD.Types
-import Network.MPDMPD.Commands2
-import Network.MPDMPD.Codec2 ( Decoder, isOK, isListOK, isAck, readAck )
+import Network.MPDMPD.Commands
+import Network.MPDMPD.Codec ( Decoder, isOK, isListOK, isAck, readAck )
 
 
 import Control.Monad

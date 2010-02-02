@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 
 
-module Network.MPDMPD.Commands2
+module Network.MPDMPD.Commands
     ( Command(..), RangeLike
 
     , stats, status, clearerror, currentsong, unsafeIdle
@@ -42,7 +42,7 @@ import Network.MPDMPD.Types
     , Output(..), OutputID(..), Stats, Status, SubsysChanged, Track, PlaylistTrack, Playlist, Range
     )
 
-import Network.MPDMPD.Codec2
+import Network.MPDMPD.Codec
 --     ( Decoder, Parameter(..), Response(..), joinParams, (<+>)
 -- 
 --     , decodePosIDs, decodeSongsPltime, decodeSingleTags, decodeDirsFiles, decodeDirsTracks
@@ -144,10 +144,10 @@ seekid (TID t) = command "seekid" t
 -- current playlist {{{
 
 add :: URI -> Command ()
-add u = command "add"
+add = command "add"
 
 addid :: URI -> Command TrackID
-addid u = commandWith "addid" decodeTID
+addid = commandWith "addid" decodeTID
 
 clear :: Command ()
 clear = command "clear"
