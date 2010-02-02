@@ -5,6 +5,7 @@ module Network.MPDMPD.Connection
     , protocolVersion
     , connect, connectEx, cmd, cmds, cmds_
     , kill, close
+    , attachFile
     ) where
 
 
@@ -29,7 +30,7 @@ import GHC.IOBase ( IOErrorType(..), IOException(..) )
 
 
 
-type MPDVar = MVar (Either (IO ()) Handle)
+type MPDVar = MVar (Either (IO ()) (Handle, Handle))
 
 data MPDConn = MPDConn String MPDVar
 
@@ -38,6 +39,13 @@ instance Show MPDConn where
 
 protocolVersion :: MPDConn -> String
 protocolVersion (MPDConn v _) = v
+
+
+attachFile :: FilePath -> IO (Result MPDConn)
+attachFile f = do
+    hs <- (,) <$> openFile f ReadMode
+              <*> openFile "/dev/null" WriteMode
+    return . (MPDConn "") <$> newMVar (Right hs)
 
 
 
@@ -62,7 +70,7 @@ connectEx host port pass = do
               proto' <- validateProto <$> B.hGetLine h
               case proto' of
                    Nothing    -> return (Left UnknownProtoResponse)
-                   Just proto -> MPDConn proto <$> newMVar (Right h) >>= \mpd ->
+                   Just proto -> MPDConn proto <$> newMVar (Right (h, h)) >>= \mpd ->
                        case pass of
                             Nothing -> return (Right mpd)
                             Just p  -> (mpd <$) <$> cmd mpd (password p)
@@ -76,17 +84,15 @@ validateProto s | "OK MPD " `B.isPrefixOf` s = Just (B.unpack $ B.drop 7 s)
 
 
 
-takeConnectionEx :: (MPDVar -> Handle -> IO (Result a)) -> MPDConn -> IO (Result a)
-takeConnectionEx act (MPDConn _ var) = do
-    x <- takeMVar var
-    ( case x of
-           Left _  -> return (Left ConnLocked)
-           -- Right h -> join <$> tryJust mapExceptions (act var h)
-           Right h -> catchJust mapExceptions
-                        (act var h)
-                        (\e -> hClose h >> return (Left e))
-        ) `finally` putMVar var x
-
+takeConnectionEx :: (MPDVar -> (Handle, Handle) -> IO (Result a)) -> MPDConn -> IO (Result a)
+takeConnectionEx act (MPDConn _ var) =
+    takeMVar var >>= \x ->
+        case x of
+             Left _            -> return (Left ConnLocked)
+             Right hs@(h1, h2) ->
+                 catchJust mapExceptions (act var hs)
+                    (\e -> hClose h1 >> hClose h2 >> return (Left e))
+    `finally` putMVar var x
 
 mapExceptions :: IOException -> Maybe MPDError
 mapExceptions e =
@@ -96,27 +102,27 @@ mapExceptions e =
          ResourceVanished -> Just DaemonGone
          -- This is raised on closed handle. Do we simply map it to
          -- DaemonGone and simplify exceptions, or differentiate between
-         -- first occurences of errors and closed handles..?
+         -- first occurences of errors and already closed handles..?
          IllegalOperation -> Just DaemonGone
          _                -> Nothing
 
 
-usingHandle :: (Handle -> IO (Result a)) -> MPDConn -> IO (Result a)
+usingHandle :: ((Handle, Handle) -> IO (Result a)) -> MPDConn -> IO (Result a)
 usingHandle = takeConnectionEx . const
 
 
 
 
 -- XXX might be a choking point...
-getResponseBlock :: Handle -> IO (Result ([ByteString], Maybe Ack))
-getResponseBlock h =
+getResponseBlock :: (Handle, Handle) -> IO (Result ([ByteString], Maybe Ack))
+getResponseBlock (hR, _) =
     collect $ \a b ->
                 case b of
                      Nothing -> return (return (a, Nothing))
                      Just e  -> return ( readAck e >>= \e' ->
                                             return (a, Just e') )
     where
-        collect k = B.hGetLine h >>= \l ->
+        collect k = B.hGetLine hR >>= \l ->
                         case () of
                              _ | isOK l    -> k [] Nothing
                                | isAck l   -> k [] (Just l)
@@ -132,7 +138,7 @@ getResponseBlock h =
 
 
 
-readResponse :: Handle -> Decoder a -> IO (Result a)
+readResponse :: (Handle, Handle) -> Decoder a -> IO (Result a)
 readResponse h dec = getResponseBlock h >>= \res ->
         return $ res >>= \lns ->
                     case lns of
@@ -141,16 +147,16 @@ readResponse h dec = getResponseBlock h >>= \res ->
 
 
 cmd :: MPDConn -> Command a -> IO (Result a)
-cmd c (Command txt dec) = flip usingHandle c $ \h ->
+cmd c (Command txt dec) = flip usingHandle c $ \hs@(_, hW) ->
             -- Fancy that. The place where output is checked for newlines and flushed
             -- if the handle is LineBuffered is only the standard hPutChar. hPutStrLn
             -- does hPutStr s >> hPutChar '\n', thus triggering the flush. Nothing
             -- of that sort happens in bytestring's backend's code path, hPutBuf,
             -- of course.
-            B.hPutStrLn h txt >> hFlush h >> readResponse h dec
+            B.hPutStrLn hW txt >> hFlush hW >> readResponse hs dec
 
 
-readResponses :: Handle -> [Decoder a] -> IO (Result ([a], Maybe Ack))
+readResponses :: (Handle, Handle) -> [Decoder a] -> IO (Result ([a], Maybe Ack))
 readResponses h decs = getResponseBlock h >>= \res ->
         return $ res >>= \(lns, mack) ->
             (\l -> (l, mack)) <$>
@@ -158,14 +164,14 @@ readResponses h decs = getResponseBlock h >>= \res ->
 
 
 cmds :: MPDConn -> [Command a] -> IO (Result ([a], Maybe Ack))
-cmds c cs = flip usingHandle c $ \h -> do
+cmds c cs = flip usingHandle c $ \hs@(_, hW) -> do
 
-        B.hPutStrLn h "command_list_ok_begin"
-        mapM_ (B.hPutStrLn h) cmdTexts
-        B.hPutStrLn h "command_list_end"
-        hFlush h
+        B.hPutStrLn hW "command_list_ok_begin"
+        mapM_ (B.hPutStrLn hW) cmdTexts
+        B.hPutStrLn hW "command_list_end"
+        hFlush hW
 
-        readResponses h cmdDecs
+        readResponses hs cmdDecs
 
     where cmdTexts = map (\(Command t _) -> t) cs
           cmdDecs  = map (\(Command _ d) -> d) cs
@@ -215,6 +221,7 @@ killingCmd c cn = cmd cn c >>= \r ->
 close, kill :: MPDConn -> IO (Result ())
 
 close = killingCmd unsafeClose
+
 kill = killingCmd unsafeKill
 
 
