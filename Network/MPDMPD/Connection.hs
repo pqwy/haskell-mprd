@@ -3,7 +3,7 @@
 module Network.MPDMPD.Connection
     ( MPDConn
     , protocolVersion
-    , connect, connectEx, cmd, cmds, cmds_
+    , connect, connectEx, cmd, cmds
     , kill, close
     , attachFile
     ) where
@@ -16,6 +16,7 @@ import Network.MPDMPD.Codec ( Decoder, isOK, isListOK, isAck, readAck )
 
 import Control.Monad
 import Control.Applicative
+import Data.Traversable
 
 import qualified Data.ByteString.Char8 as B
 
@@ -26,6 +27,7 @@ import Network
 import Control.Concurrent.MVar
 
 import Control.Exception
+-- Gah. Lack of IOException predicates, that's all.
 import GHC.IOBase ( IOErrorType(..), IOException(..) )
 
 
@@ -35,7 +37,8 @@ type MPDVar = MVar (Either (IO ()) (Handle, Handle))
 data MPDConn = MPDConn String MPDVar
 
 instance Show MPDConn where
-    show (MPDConn v _) = "<MPD connection, ver " ++ v ++ ">"
+    show (MPDConn v _) = "<MPD connection, \"" ++ v ++ "\">"
+
 
 protocolVersion :: MPDConn -> String
 protocolVersion (MPDConn v _) = v
@@ -45,7 +48,7 @@ attachFile :: FilePath -> IO (Result MPDConn)
 attachFile f = do
     hs <- (,) <$> openFile f ReadMode
               <*> openFile "/dev/null" WriteMode
-    return . (MPDConn "") <$> newMVar (Right hs)
+    Right . (MPDConn "") <$> newMVar (Right hs)
 
 
 
@@ -81,9 +84,6 @@ validateProto s | "OK MPD " `B.isPrefixOf` s = Just (B.unpack $ B.drop 7 s)
                 | otherwise                  = Nothing
 
 
-
-
-
 takeConnectionEx :: (MPDVar -> (Handle, Handle) -> IO (Result a)) -> MPDConn -> IO (Result a)
 takeConnectionEx act (MPDConn _ var) =
     takeMVar var >>= \x ->
@@ -92,7 +92,7 @@ takeConnectionEx act (MPDConn _ var) =
              Right hs@(h1, h2) ->
                  catchJust mapExceptions (act var hs)
                     (\e -> hClose h1 >> hClose h2 >> return (Left e))
-    `finally` putMVar var x
+        `finally` putMVar var x
 
 mapExceptions :: IOException -> Maybe MPDError
 mapExceptions e =
@@ -107,22 +107,21 @@ mapExceptions e =
          _                -> Nothing
 
 
+
 usingHandle :: ((Handle, Handle) -> IO (Result a)) -> MPDConn -> IO (Result a)
 usingHandle = takeConnectionEx . const
 
 
-
-
 -- XXX might be a choking point...
-getResponseBlock :: (Handle, Handle) -> IO (Result ([ByteString], Maybe Ack))
-getResponseBlock (hR, _) =
+getResponseBlock :: Handle -> IO (Result ([ByteString], Maybe Ack))
+getResponseBlock h =
     collect $ \a b ->
                 case b of
                      Nothing -> return (return (a, Nothing))
                      Just e  -> return ( readAck e >>= \e' ->
                                             return (a, Just e') )
     where
-        collect k = B.hGetLine hR >>= \l ->
+        collect k = B.hGetLine h >>= \l ->
                         case () of
                              _ | isOK l    -> k [] Nothing
                                | isAck l   -> k [] (Just l)
@@ -137,48 +136,38 @@ getResponseBlock (hR, _) =
 --                | otherwise -> (first (l:) <$>) <$> getResponseBlock' h
 
 
-
-readResponse :: (Handle, Handle) -> Decoder a -> IO (Result a)
-readResponse h dec = getResponseBlock h >>= \res ->
-        return $ res >>= \lns ->
-                    case lns of
-                         (bs, Nothing) -> dec bs
-                         (_,  Just a)  -> Left (AckError a)
-
-
 cmd :: MPDConn -> Command a -> IO (Result a)
-cmd c (Command txt dec) = flip usingHandle c $ \hs@(_, hW) ->
-            -- Fancy that. The place where output is checked for newlines and flushed
-            -- if the handle is LineBuffered is only the standard hPutChar. hPutStrLn
-            -- does hPutStr s >> hPutChar '\n', thus triggering the flush. Nothing
-            -- of that sort happens in bytestring's backend's code path, hPutBuf,
-            -- of course.
-            B.hPutStrLn hW txt >> hFlush hW >> readResponse hs dec
+cmd mpd c = flip usingHandle mpd $ \h ->
+            case c of
+                 Command txt dec   -> commSingleCommand h txt dec
+                 Commands txtn dec -> commMultiCommands h txtn dec
+             
+
+commSingleCommand :: (Handle, Handle) -> ByteString -> Decoder a -> IO (Result a)
+commSingleCommand h@(hR, hW) txt dec =
+    B.hPutStrLn hW txt >> hFlush hW >> readResponseWith (:[]) hR dec
 
 
-readResponses :: (Handle, Handle) -> [Decoder a] -> IO (Result ([a], Maybe Ack))
-readResponses h decs = getResponseBlock h >>= \res ->
+commMultiCommands :: (Handle, Handle) -> [ByteString] -> Decoder a -> IO (Result a)
+commMultiCommands (hR, hW) txt dec = do
+    B.hPutStrLn hW "command_list_ok_begin"
+    mapM_ (B.hPutStrLn hW) txt
+    B.hPutStrLn hW "command_list_end"
+    hFlush hW
+    readResponseWith (chunkBy isListOK) hR dec
+
+
+readResponseWith :: ([ByteString] -> [[ByteString]])
+                 -> Handle -> Decoder a -> IO (Result a)
+readResponseWith f h dec = getResponseBlock h >>= \res ->
         return $ res >>= \(lns, mack) ->
-            (\l -> (l, mack)) <$>
-                sequence (zipWith ($) decs (chunkBy isListOK lns))
+                    case mack of
+                         Nothing -> fst <$> dec (f lns)
+                         Just a  -> Left (AckError a)
 
 
-cmds :: MPDConn -> [Command a] -> IO (Result ([a], Maybe Ack))
-cmds c cs = flip usingHandle c $ \hs@(_, hW) -> do
-
-        B.hPutStrLn hW "command_list_ok_begin"
-        mapM_ (B.hPutStrLn hW) cmdTexts
-        B.hPutStrLn hW "command_list_end"
-        hFlush hW
-
-        readResponses hs cmdDecs
-
-    where cmdTexts = map (\(Command t _) -> t) cs
-          cmdDecs  = map (\(Command _ d) -> d) cs
-
-cmds_ :: MPDConn -> [Command a] -> IO (Result ())
-cmds_ c cs = (() <$) <$> cmds c cs
-
+cmds :: MPDConn -> [Command a] -> IO (Result [a])
+cmds mpd = cmd mpd . sequenceA
 
 
 chunkBy :: (Show a) => (a -> Bool) -> [a] -> [[a]]
@@ -223,10 +212,4 @@ close, kill :: MPDConn -> IO (Result ())
 close = killingCmd unsafeClose
 
 kill = killingCmd unsafeKill
-
-
-
-
--- first :: (a -> b) -> (a, c) -> (b, c)
--- first f (a, c) = (f a, c)
 

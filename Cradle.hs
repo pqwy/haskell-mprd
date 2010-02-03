@@ -14,7 +14,7 @@ main1 = do
     print (length `fmap` res)
 
 main2 = do
-    Right mpd <- attachFile "torture2.txt"
+    Right mpd <- attachFile "torture3.txt"
     res <- cmd mpd (listallinfo Nothing)
     print (length `fmap` res)
 
