@@ -119,7 +119,7 @@ single  = command "single"
 crossfade, setvol :: Int -> Command ()
 
 crossfade = command "crossfade"
-setvol x  = command "setvol" x
+setvol    = command "setvol"
 -- }}}
 
 -- controlling playback {{{
