@@ -6,6 +6,7 @@ module Network.MPDMPD.Codec
     ( Decoder, Parameter(..)
     , joinParams, (<+>), bsToString, stringToBs
 
+    , nullDecoder
     , decodeTrack, decodeTracks, decodePLTrack, decodePLTracks, decodeOutputs
     , decodePosIDs, decodeSongsPltime, decodeSingleTags, decodeURIs
     , decodeDirsFiles, decodeDirsTracks, decodeTagTypes, decodeURLHandlers
@@ -16,6 +17,7 @@ module Network.MPDMPD.Codec
     ) where
 
 import Network.MPDMPD.Types
+import Network.MPDMPD.Misc
 
 import Data.Maybe
 import Control.Monad
@@ -81,22 +83,31 @@ encodeSubsysChanged = fromMaybe (error "Codec: inexhaustive subSysMap.")
 
 -- dec {{{
 
-type Decoder a = [ByteString] -> Result a
+-- Decoders essentially form YET ANOTHER state monad, this one being the base for the
+-- Applicative instance of Commands.
+
+type Decoder a = [[ByteString]] -> Result (a, [[ByteString]])
+
+nullDecoder :: a -> Decoder a
+nullDecoder = export . pure
 
 
 newtype Parser a = P { nP :: Int -> [(ByteString, ByteString)]
                          -> Either (Int, String) (a, Int, [(ByteString, ByteString)]) }
 
+
 export :: Parser a -> Decoder a
-export (P p) bs = mapM splitKey bs >>= \bss ->
-                    case p 0 bss of
-                         Right (x, _, _) -> return x
+export _     []       = Left (DecodeError 0 "decoder expecting an input chunk")
+export (P p) (bs:bss) = splitKeys bs >>= \bs' ->
+                    case p 0 bs' of
+                         Right (x, _, _) -> Right (x, bss)
                          Left  (l, e)    -> Left (DecodeError l e)
-    where
-        splitKey b =
-            case B.breakSubstring ": " b of
-                 (k, v) | B.length v >= 2 -> return (k, B.drop 2 v)
-                        | otherwise -> Left (DecodeError 0 "malformed key-value pair")
+
+splitKeys :: [ByteString] -> Result [(ByteString, ByteString)]
+splitKeys = mapM $ \b ->
+    case B.breakSubstring ": " b of
+         (k, v) | B.length v >= 2 -> return (k, B.drop 2 v)
+                | otherwise       -> Left (DecodeError 0 "malformed key-value pair")
 
 
 instance Monad Parser where
@@ -337,9 +348,11 @@ isListOK = ( == "list_OK" )
 
 
 readAck :: ByteString -> Result Ack
+-- If we can't manage an ack all bets are probably off, but let's leave
+-- that to the client.
 readAck = maybe (Left $ OtherError "can't parse ack") Right . parseAck
 
--- Yes. It's ugly.
+-- Yes. It's ugly. But lightweight.
 parseAck :: ByteString -> Maybe Ack
 parseAck s = do
     guard ("ACK [" `B.isPrefixOf` s)
@@ -355,9 +368,6 @@ parseAck s = do
     return Ack { ackError = err, ackPosition = pos
                , ackCommand = errCmd, ackDescription = rest }
 
-
-first :: (a -> b) -> (a, c) -> (b, c)
-first f (a, c) = (f a, c)
 -- }}}
 
 -- vim:set fdm=marker:

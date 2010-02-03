@@ -34,7 +34,6 @@ module Network.MPDMPD.Commands
 
 
 
-
 import Network.MPDMPD.Types
     ( Text, ByteString
     , MetaField(..), MetaContent
@@ -43,27 +42,32 @@ import Network.MPDMPD.Types
     )
 
 import Network.MPDMPD.Codec
---     ( Decoder, Parameter(..), Response(..), joinParams, (<+>)
--- 
---     , decodePosIDs, decodeSongsPltime, decodeSingleTags, decodeDirsFiles, decodeDirsTracks
---     , decodeTagTypes, decodeURLHandlers, decodeCommands, decodeURIs, decodePlaylists
---     , decodeSticker, decodeStickers, decodeStickersFiles
---     )
+import Network.MPDMPD.Misc
 
 
 import Prelude hiding ( repeat )
 
+import Control.Monad
+import Control.Applicative
 
 
-data Command a = Command ByteString (Decoder a) -- | Commands [ByteString] (Decoder a)
+data Command a = Command ByteString (Decoder a)
+               | Commands [ByteString] (Decoder a)
+
 
 instance Functor Command where
-    fmap f (Command x d) = Command x (fmap f . d)
+    fmap f (Command  x d) = Command  x (fmap (first f) . d)
+    fmap f (Commands x d) = Commands x (fmap (first f) . d)
 
--- instance Applicative Command where
---     pure = command ""
---     Commands ax ad <*> Commands bx bd =
---         Commands (ax ++ bx) 
+
+instance Applicative Command where
+    pure = Command "" . nullDecoder
+
+    Command ax ad <*> b = Commands [ax] ad <*> b
+    a <*> Command bx bd = a <*> Commands [bx] bd
+    Commands ax ad <*> Commands bx bd =
+        Commands (ax ++ bx) (ad >=> \(a', bss') -> first (a'$) <$> bd bss')
+
 
 class (Parameter a) => RangeLike a where
 
@@ -82,7 +86,7 @@ instance (CmdBuilder c a, Parameter p) => CmdBuilder (p -> c) a where
 
 
 command :: (CmdBuilder a ()) => ByteString -> a
-command s = commandWith s (\_ -> return ())
+command s = commandWith s (nullDecoder ())
 
 
 -- querying {{{
