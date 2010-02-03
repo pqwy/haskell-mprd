@@ -1,10 +1,9 @@
 name:           libmpdmpd
 version:        0.1
-synopsis:       MPD client library
-description:    An alternative implementation of the MPD protocol.
-license:        BSD3
+synopsis:       Another MPD client library
 author:         David Kaloper <david@pako.st>
 copyright:      2010 David Kaloper
+stability:      alpha
 category:       Network, Sound
 cabal-version:  >= 1.2
 build-type:     Simple

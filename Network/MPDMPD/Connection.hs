@@ -32,7 +32,7 @@ import GHC.IOBase ( IOErrorType(..), IOException(..) )
 
 
 
-type MPDVar = MVar (Either (IO ()) (Handle, Handle))
+type MPDVar = MVar (Maybe (Handle, Handle))
 
 data MPDConn = MPDConn String MPDVar
 
@@ -48,7 +48,7 @@ attachFile :: FilePath -> IO (Result MPDConn)
 attachFile f = do
     hs <- (,) <$> openFile f ReadMode
               <*> openFile "/dev/null" WriteMode
-    Right . (MPDConn "") <$> newMVar (Right hs)
+    Right . (MPDConn "") <$> newMVar (Just hs)
 
 
 
@@ -73,7 +73,8 @@ connectEx host port pass = do
               proto' <- validateProto <$> B.hGetLine h
               case proto' of
                    Nothing    -> return (Left UnknownProtoResponse)
-                   Just proto -> MPDConn proto <$> newMVar (Right (h, h)) >>= \mpd ->
+                   Just proto ->
+                       MPDConn proto <$> newMVar (Just (h, h)) >>= \mpd ->
                        case pass of
                             Nothing -> return (Right mpd)
                             Just p  -> (mpd <$) <$> cmd mpd (password p)
@@ -84,14 +85,16 @@ validateProto s | "OK MPD " `B.isPrefixOf` s = Just (B.unpack $ B.drop 7 s)
                 | otherwise                  = Nothing
 
 
-takeConnectionEx :: (MPDVar -> (Handle, Handle) -> IO (Result a)) -> MPDConn -> IO (Result a)
-takeConnectionEx act (MPDConn _ var) =
+
+takeConnection :: ((Handle, Handle) -> IO (Result a)) -> MPDConn -> IO (Result a)
+takeConnection act (MPDConn _ var) =
     takeMVar var >>= \x ->
         case x of
-             Left _            -> return (Left ConnLocked)
-             Right hs@(h1, h2) ->
-                 catchJust mapExceptions (act var hs)
-                    (\e -> hClose h1 >> hClose h2 >> return (Left e))
+             Nothing          -> return (Left ConnLocked)
+             Just hs@(h1, h2) ->
+                 catchJust mapExceptions
+                           (act hs)
+                           (\e -> hClose h1 >> hClose h2 >> return (Left e))
         `finally` putMVar var x
 
 mapExceptions :: IOException -> Maybe MPDError
@@ -108,43 +111,18 @@ mapExceptions e =
 
 
 
-usingHandle :: ((Handle, Handle) -> IO (Result a)) -> MPDConn -> IO (Result a)
-usingHandle = takeConnectionEx . const
-
-
--- XXX might be a choking point...
-getResponseBlock :: Handle -> IO (Result ([ByteString], Maybe Ack))
-getResponseBlock h =
-    collect $ \a b ->
-                case b of
-                     Nothing -> return (return (a, Nothing))
-                     Just e  -> return ( readAck e >>= \e' ->
-                                            return (a, Just e') )
-    where
-        collect k = B.hGetLine h >>= \l ->
-                        case () of
-                             _ | isOK l    -> k [] Nothing
-                               | isAck l   -> k [] (Just l)
-                               | otherwise -> collect $ \a b -> k (l:a) b
-
-
--- getResponseBlock' :: Handle -> IO (Result ([ByteString], Maybe Ack))
--- getResponseBlock' h = B.hGetLine h >>= \l ->
---         case () of
---              _ | isOK l    -> return (return ([], Nothing))
---                | isAck l   -> return (readAck l >>= \a -> return ([], Just a))
---                | otherwise -> (first (l:) <$>) <$> getResponseBlock' h
-
+cmds :: MPDConn -> [Command a] -> IO (Result [a])
+cmds mpd = cmd mpd . sequenceA
 
 cmd :: MPDConn -> Command a -> IO (Result a)
-cmd mpd c = flip usingHandle mpd $ \h ->
+cmd mpd c = flip takeConnection mpd $ \h ->
             case c of
                  Command txt dec   -> commSingleCommand h txt dec
                  Commands txtn dec -> commMultiCommands h txtn dec
              
 
 commSingleCommand :: (Handle, Handle) -> ByteString -> Decoder a -> IO (Result a)
-commSingleCommand h@(hR, hW) txt dec =
+commSingleCommand (hR, hW) txt dec =
     B.hPutStrLn hW txt >> hFlush hW >> readResponseWith (:[]) hR dec
 
 
@@ -159,6 +137,7 @@ commMultiCommands (hR, hW) txt dec = do
 
 readResponseWith :: ([ByteString] -> [[ByteString]])
                  -> Handle -> Decoder a -> IO (Result a)
+
 readResponseWith f h dec = getResponseBlock h >>= \res ->
         return $ res >>= \(lns, mack) ->
                     case mack of
@@ -166,10 +145,28 @@ readResponseWith f h dec = getResponseBlock h >>= \res ->
                          Just a  -> Left (AckError a)
 
 
-cmds :: MPDConn -> [Command a] -> IO (Result [a])
-cmds mpd = cmd mpd . sequenceA
+-- CPS'd version is kinda fastest but the worst memory hog too.
+getResponseBlock :: Handle -> IO (Result ([ByteString], Maybe Ack))
+getResponseBlock h = collect $ \a b ->
+                case b of
+                     Nothing -> return (return (a, Nothing))
+                     Just e  -> return ( readAck e >>= \e' ->
+                                            return (a, Just e') )
+    where
+        collect k = B.hGetLine h >>= \l ->
+                        case () of
+                             _ | isOK l    -> k [] Nothing
+                               | isAck l   -> k [] (Just l)
+                               | otherwise -> collect (k . (l:))
+
+-- getResponseBlock h = B.hGetLine h >>= \l ->
+--         case () of
+--              _ | isOK l    -> return (return ([], Nothing))
+--                | isAck l   -> return (readAck l >>= \a -> return ([], Just a))
+--                | otherwise -> (first (l:) <$>) <$> getResponseBlock h
 
 
+-- Yup. CPS'd fastest.
 chunkBy :: (Show a) => (a -> Bool) -> [a] -> [[a]]
 chunkBy _ [] = []
 chunkBy f l = go l (\a b -> a : chunkBy f b)
@@ -179,26 +176,6 @@ chunkBy f l = go l (\a b -> a : chunkBy f b)
                     | otherwise = go xs (k . (x:))
 
 
--- chunkBy' f [] = []
--- chunkBy' f xs =
---     case f `break` xs of
---          (a, [])  -> [a]
---          (a, _:b) -> chunkBy' f b
-
--- idle :: MPDConn -> IO (Result [SubsysChanged])
--- idle = usingHandle $ \h ->
---         B.hPutStrLn h x >> (readResponse h dec
---                             `finally` B.hPutStrLn h "noidle" )
--- 
--- idle :: MPDConn -> IO (Result [SubsysChanged])
--- idle = takeConnectionEx $ \var h -> do
---         B.hPutStrLn h "idle"
---         putMVar var (return ())
---         readResponse h d
---             `finally` takeMVar var
--- 
---     where Command x d = unsafeIdle
-
 
 killingCmd :: Command () -> MPDConn -> IO (Result ())
 killingCmd c cn = cmd cn c >>= \r ->
@@ -206,10 +183,8 @@ killingCmd c cn = cmd cn c >>= \r ->
          Left DaemonGone -> return (return ())
          x               -> return x
 
-
 close, kill :: MPDConn -> IO (Result ())
 
 close = killingCmd unsafeClose
-
-kill = killingCmd unsafeKill
+kill  = killingCmd unsafeKill
 

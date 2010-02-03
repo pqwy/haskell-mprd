@@ -7,7 +7,7 @@
 module Network.MPDMPD.Commands
     ( Command(..), RangeLike
 
-    , stats, status, clearerror, currentsong, unsafeIdle
+    , stats, status, clearerror, currentsong, idle
 
     , consume, random, repeat, single, crossfade, setvol
 
@@ -97,8 +97,8 @@ stats = commandWith "stats" decodeStats
 status :: Command Status
 status = commandWith "status" decodeStatus
 
-unsafeIdle :: [SubsysChanged] -> Command [SubsysChanged]
-unsafeIdle = commandWith "idle" decodeSubsysChanged
+idle :: [SubsysChanged] -> Command [SubsysChanged]
+idle = commandWith "idle" decodeSubsysChanged
 
 clearerror :: Command ()
 clearerror = command "clearerror"

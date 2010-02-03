@@ -3,6 +3,7 @@ module Main where
 import Network.MPDMPD.Connection
 import Network.MPDMPD.Commands
 
+import Control.Applicative
 import System.Environment
 
 
@@ -17,6 +18,11 @@ main2 = do
     Right mpd <- attachFile "torture3.txt"
     res <- cmd mpd (listallinfo Nothing)
     print (length `fmap` res)
+
+main3 = do
+    Right mpd <- attachFile "manyping.txt"
+    res <- cmd mpd (ping *> ping *> ping *> ping)
+    print res
 
 -- main1 :: IO ()
 -- main1 = do
