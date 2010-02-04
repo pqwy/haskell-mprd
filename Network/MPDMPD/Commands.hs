@@ -52,7 +52,7 @@ import Control.Applicative
 
 
 data Command a = Command ByteString (Decoder a)
-               | Commands [ByteString] (Decoder a)
+               | Commands ([ByteString] -> [ByteString]) (Decoder a)
 
 
 instance Functor Command where
@@ -63,10 +63,10 @@ instance Functor Command where
 instance Applicative Command where
     pure = Command "" . nullDecoder
 
-    Command ax ad <*> b = Commands [ax] ad <*> b
-    a <*> Command bx bd = a <*> Commands [bx] bd
+    Command ax ad <*> b = Commands (ax:) ad <*> b
+    a <*> Command bx bd = a <*> Commands (bx:) bd
     Commands ax ad <*> Commands bx bd =
-        Commands (ax ++ bx) (ad >=> \(a', bss') -> first (a'$) <$> bd bss')
+        Commands (ax . bx) (ad >=> \(a', bss') -> first (a'$) <$> bd bss')
 
 
 class CmdBuilder c a | c -> a where

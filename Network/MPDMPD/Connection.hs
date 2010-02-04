@@ -118,7 +118,7 @@ cmd :: MPDConn -> Command a -> IO (Result a)
 cmd mpd c = flip takeConnection mpd $ \h ->
             case c of
                  Command txt dec   -> commSingleCommand h txt dec
-                 Commands txtn dec -> commMultiCommands h txtn dec
+                 Commands txtf dec -> commMultiCommands h txtf dec
              
 
 commSingleCommand :: (Handle, Handle) -> ByteString -> Decoder a -> IO (Result a)
@@ -126,10 +126,12 @@ commSingleCommand (hR, hW) txt dec =
     B.hPutStrLn hW txt >> hFlush hW >> readResponseWith (:[]) hR dec
 
 
-commMultiCommands :: (Handle, Handle) -> [ByteString] -> Decoder a -> IO (Result a)
-commMultiCommands (hR, hW) txt dec = do
+commMultiCommands :: (Handle, Handle)
+                  -> ([ByteString] -> [ByteString])
+                  -> Decoder a -> IO (Result a)
+commMultiCommands (hR, hW) txtf dec = do
     B.hPutStrLn hW "command_list_ok_begin"
-    mapM_ (B.hPutStrLn hW) txt
+    mapM_ (B.hPutStrLn hW) (txtf [])
     B.hPutStrLn hW "command_list_end"
     hFlush hW
     readResponseWith (chunkBy isListOK) hR dec
