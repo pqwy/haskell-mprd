@@ -1,8 +1,9 @@
+{-# LANGUAGE PackageImports  #-}
 module Network.MPDMPD.Monad
     ( module Network.MPDMPD
     , module Control.Monad.Trans
     , MPDt, MPD
-    , runMPDt, runMPDtEx
+    , runMPDt, runMPDtEx, attachMPDt
     , cmd, cmds, protocolVersion
     ) where
 
@@ -11,7 +12,7 @@ import Network.MPDMPD hiding
 import qualified Network.MPDMPD.Connection as C
 
 import Control.Monad
-import Control.Monad.Trans
+import "mtl" Control.Monad.Trans
 import Control.Applicative
 
 import Network
@@ -74,4 +75,6 @@ runMPDtEx (MPDt a) hn p pw = do
 runMPDt :: (MonadIO m) => MPDt m a -> m (Result a)
 runMPDt m = runMPDtEx m "localhost" 6600 Nothing
 
+attachMPDt :: (MonadIO m) => FilePath -> MPDt m a -> m (Result a)
+attachMPDt fp (MPDt a) = liftIO (attachFile fp) >>= \(Right c) -> a c
 

@@ -1,0 +1,18 @@
+OK MPD 0.15.0
+volume: -1
+repeat: 0
+random: 0
+single: 0
+consume: 0
+playlist: 22
+playlistlength: 4
+xfade: 0
+state: play
+song: 0
+songid: 15
+time: 54:497
+bitrate: 256
+audio: 44100:24:2
+nextsong: 1
+nextsongid: 16
+OK

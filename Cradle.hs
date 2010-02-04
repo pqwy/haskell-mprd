@@ -1,36 +1,42 @@
+{-# LANGUAGE PackageImports  #-}
 module Main where
 
-import Network.MPDMPD.Connection
+-- import Network.MPDMPD.Connection
+import Network.MPDMPD.Monad
 import Network.MPDMPD.Commands
+import qualified Network.MPDMPD.Tags as TS
+import "mtl" Control.Monad.Trans
+
+import Data.List
 
 import Control.Applicative
 import System.Environment
 
 
-main1, main2 :: IO ()
+main1, main2, main3, main4 :: IO ()
 
-main1 = do
-    Right mpd <- attachFile "torture1.txt"
-    res <- cmd mpd (listall Nothing)
-    print (length `fmap` res)
+main1 = do attachMPDt "snippets/torture1.txt" $
+            cmd (length <$> listall Nothing) >>= lift . print
+           return ()
 
-main2 = do
-    Right mpd <- attachFile "torture3.txt"
-    res <- cmd mpd (listallinfo Nothing)
-    print (length `fmap` res)
+main2 = do attachMPDt "snippets/torture3.txt" $
+            cmd (length <$> listallinfo Nothing) >>= lift . print
+           return ()
 
-main3 = do
-    Right mpd <- attachFile "manyping.txt"
-    res <- cmd mpd (ping *> ping *> ping *> ping)
-    print res
+main3 = do attachMPDt "snippets/manyping.txt" $
+            cmd (ping *> ping *> ping *> ping) >>= lift . print
+           return ()
 
--- main1 :: IO ()
--- main1 = do
---     Right xn <- quickRead "torture1.txt" (listall Nothing)
---     print (length xn)
--- 
--- main2 = do
---     Right xn <- quickRead "torture2.txt" (listallinfo Nothing)
---     print (length xn)
+main4 = do attachMPDt "snippets/torture3.txt" $
+            cmd (counter . mult 100 <$> listallinfo Nothing) >>= lift . print
+           return ()
+    where
+        counter = flip foldl' 0 $ \a u ->
+                    case u of
+                         Left _ -> a
+                         Right s -> maybe a (const (a+1)) $
+                                TS.artist `lkpTag` s >> TS.album `lkpTag` s >> TS.title `lkpTag` s
 
-main = main2
+        mult n = concat . replicate n
+
+main = main4

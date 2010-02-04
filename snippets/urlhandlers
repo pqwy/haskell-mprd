@@ -1,0 +1,8 @@
+OK MPD 0.15.0
+handler: http://
+handler: lastfm://
+handler: mms://
+handler: mmsh://
+handler: mmst://
+handler: mmsu://
+OK
