@@ -1,5 +1,5 @@
 name:           libmpdmpd
-version:        0.1
+version:        0.1.1
 synopsis:       Another MPD client library
 author:         David Kaloper <david@pako.st>
 copyright:      2010 David Kaloper
@@ -12,6 +12,7 @@ library
   exposed-modules:
     Network.MPDMPD
     Network.MPDMPD.Tags
+    Network.MPDMPD.Monad
   other-modules:
     Network.MPDMPD.Misc
     Network.MPDMPD.Types
@@ -24,8 +25,9 @@ library
     text        >= 0.7,
     bytestring  >= 0.9,
     containers  >= 0.2,
-    network     >= 2.2
+    network     >= 2.2,
+    mtl         >= 1.1
 
   ghc-prof-options: -auto-all
-  ghc-options: -Wall -O2
+  ghc-options: -Wall -O1
 
