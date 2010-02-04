@@ -83,15 +83,21 @@ encodeSubsysChanged = fromMaybe (error "Codec: inexhaustive subSysMap.")
 
 -- dec {{{
 
+-- The story is this: a Decoder needs its list of lines to parse, but since Commands
+-- compose as they do, from outside, it's impossible to map a particular input block
+-- to its command's corresponding decoder (from outside, simple commands look like
+-- composite ones). So decoders have to feed each other input blocks in sequence.
+-- 
 -- Decoders essentially form YET ANOTHER state monad, this one being the base for the
 -- Applicative instance of Commands.
-
 type Decoder a = [[ByteString]] -> Result (a, [[ByteString]])
 
 nullDecoder :: a -> Decoder a
 nullDecoder = export . pure
 
 
+-- ...while the parsers are a good ole state/exception mon'. CPSing doesnt improve speed
+-- noticably. Using Parsec pulls in a needless dependency AND is around 35% slower.
 newtype Parser a = P { nP :: Int -> [(ByteString, ByteString)]
                          -> Either (Int, String) (a, Int, [(ByteString, ByteString)]) }
 
@@ -110,9 +116,12 @@ splitKeys = mapM $ \b ->
                 | otherwise       -> Left (DecodeError 0 "malformed key-value pair")
 
 
+-- And yes, compositional parsers are *much* easier to work with than ad-hoc parsing
+-- operations.
 instance Monad Parser where
     return x  = P (\ !l s -> Right (x, l, s))
     P p >>= f = P (\ !l s -> either Left (\(a, !l', s') -> nP (f a) l' s') (p l s))
+    fail s = P (\ !l _ -> Left (l, s))
 
 instance Functor Parser where fmap = liftM
 
@@ -121,12 +130,9 @@ instance Applicative Parser where
     (<*>) = ap
 
 instance Alternative Parser where
-    empty = parseError ""
+    empty = fail ""
     P a <|> P b = P (\ !l s -> either (\_ -> b l s) Right (a l s))
 
-
-parseError :: String -> Parser a
-parseError s = P (\ !l _ -> Left (l, s))
 
 line :: Parser (ByteString, ByteString)
 line = P $ \ !l s -> case s of
@@ -136,7 +142,7 @@ line = P $ \ !l s -> case s of
 satKey :: (ByteString -> Bool) -> Parser (ByteString, ByteString)
 satKey p = line >>= \x@(k, _) ->
             if p k then pure x
-                   else parseError ("unexpected key " ++ B.unpack k)
+                   else fail ("unexpected key " ++ B.unpack k)
 
 rawKey :: ByteString -> Parser ByteString
 rawKey k = snd <$> satKey (== k)
@@ -145,13 +151,13 @@ key :: (Field a) => ByteString -> Parser a
 key = rawKey >=> field
 
 
-
+-- For overloading the "key". Convenient.
 class Field a where field :: ByteString -> Parser a
 
 instance Field Int where
     field b = case B.readInt b of
                    Just (x, y) | B.null y -> pure x
-                   _                      -> parseError (B.unpack b)
+                   _                      -> fail (B.unpack b)
 
 instance Field Bool   where field = fmap (/= (0 :: Int)) . field
 
@@ -314,10 +320,10 @@ decodeStatus = export $
         state "play"  = pure StatePlay
         state "stop"  = pure StateStop
         state "pause" = pure StatePause
-        state x       = parseError (B.unpack x ++ "?")
+        state x       = fail (B.unpack x ++ "?")
 
         nTuple n x | length xn == n = mapM field xn
-                   | otherwise      = parseError (show n ++ "-place list")
+                   | otherwise      = fail (show n ++ "-place list")
             where xn = B.split ':' x
 
 

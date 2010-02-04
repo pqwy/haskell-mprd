@@ -188,3 +188,4 @@ close, kill :: MPDConn -> IO (Result ())
 close = killingCmd unsafeClose
 kill  = killingCmd unsafeKill
 
+

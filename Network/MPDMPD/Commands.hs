@@ -69,24 +69,26 @@ instance Applicative Command where
         Commands (ax ++ bx) (ad >=> \(a', bss') -> first (a'$) <$> bd bss')
 
 
-class (Parameter a) => RangeLike a where
-
-instance RangeLike PlaylistPos where
-instance RangeLike Range where
-
-
 class CmdBuilder c a | c -> a where
     commandWith :: ByteString -> Decoder a -> c
 
 instance CmdBuilder (Command a) a where
     commandWith s d = Command s d
 
+-- This is the one requiring undecidable instances, but it is pretty
+-- decidable in itself. Convenience.
 instance (CmdBuilder c a, Parameter p) => CmdBuilder (p -> c) a where
     commandWith s d p = commandWith (s <+> encode p) d
 
 
 command :: (CmdBuilder a ()) => ByteString -> a
 command s = commandWith s (nullDecoder ())
+
+
+class (Parameter a) => RangeLike a where
+
+instance RangeLike PlaylistPos where
+instance RangeLike Range where
 
 
 -- querying {{{

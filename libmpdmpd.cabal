@@ -13,6 +13,7 @@ library
     Network.MPDMPD
     Network.MPDMPD.Tags
   other-modules:
+    Network.MPDMPD.Misc
     Network.MPDMPD.Types
     Network.MPDMPD.Codec
     Network.MPDMPD.Commands
