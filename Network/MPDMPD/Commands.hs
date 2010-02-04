@@ -36,11 +36,11 @@ module Network.MPDMPD.Commands
 
 import Network.MPDMPD.Types
     ( Text, ByteString
-    , MetaField(..), MetaContent
+    , MetaField, MetaContent
     , URI(..), QueryPred, Seconds, PlaylistPos, PlaylistVersion(..), TrackID(..), JobID(..)
     , Output(..), OutputID(..), Stats, Status, SubsysChanged, Track, PlaylistTrack, Playlist, Range
     )
-
+import Network.MPDMPD.Tags
 import Network.MPDMPD.Codec
 import Network.MPDMPD.Misc
 
@@ -252,7 +252,8 @@ find = commandWith "find" decodeTracks
 -- findadd??
 
 list :: MetaField -> Command [MetaContent]
-list (MF t) = Command (joinParams ["list", t]) (decodeSingleTags t)
+list t = Command (joinParams ["list", t']) (decodeSingleTags t')
+    where t' = encode t
 
 listAlbumsByArtist :: MetaContent -> Command [MetaContent]
 listAlbumsByArtist a =

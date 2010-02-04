@@ -16,6 +16,7 @@ module Network.MPDMPD.Codec
     , isOK, isAck, isListOK, readAck
     ) where
 
+import Network.MPDMPD.Tags
 import Network.MPDMPD.Types
 import Network.MPDMPD.Misc
 
@@ -45,11 +46,13 @@ instance Parameter Int where encode = simpleEncode
 
 instance Parameter Text where encode = E.encodeUtf8 . quotes
 
+instance Parameter MetaField where encode = metafieldToBytestring
+
 instance Parameter Range where
     encode (a :/: b) = B.intercalate ":" [encode a, encode b]
 
 instance Parameter [QueryPred] where
-    encode = joinParams . map (\(MF t, v) -> t <+> encode v)
+    encode = joinParams . map (\(t, v) -> encode t <+> encode v)
 
 instance Parameter [SubsysChanged] where
     encode = joinParams . map encodeSubsysChanged
@@ -181,9 +184,10 @@ parseTrack = mkTrack <$> key "file"
         mkTrack f t ts = zeroTrack { trackFile = f, trackTime = t, trackTags = ts } 
 
 parseTags :: Parser Tags
-parseTags = mkTags <$> many ( (\(k, v) -> (MF k, E.decodeUtf8 v)) <$> satKey tagKey )
+parseTags = mkTags <$> many ( tuple <$> satKey tagKey )
     where
-        tagKey = not . (`elem` ["file", "Pos", "directory"])
+        tagKey       = not . (`elem` ["file", "Pos", "directory"])
+        tuple (k, v) = (bytestringToMetafield k, E.decodeUtf8 v)
 
 decodeTrack :: Decoder Track
 decodeTrack = export parseTrack
@@ -235,7 +239,7 @@ decodeDirsTracks = export $
     many ( Left <$> key "directory" <|> Right <$> parseTrack )
 
 decodeTagTypes :: Decoder [MetaField]
-decodeTagTypes = export $ many (MF <$> rawKey "tagtype")
+decodeTagTypes = export $ many (bytestringToMetafield <$> rawKey "tagtype")
 
 decodeURLHandlers :: Decoder [String]
 decodeURLHandlers = export $ many (key "handler")

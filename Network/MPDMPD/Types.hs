@@ -9,7 +9,7 @@ module Network.MPDMPD.Types
     
     , module Network.MPDMPD.Tags
     , QueryPred, URI(..)
-    , queryStr
+    , (<?>)
 
     , Seconds, PlaylistPos, PlaylistVersion(..), TrackID(..), JobID(..), OutputID(..)
     , Stats(..), Status(..), PlayState(..), SubsysChanged(..)
@@ -21,7 +21,7 @@ module Network.MPDMPD.Types
     ) where
 
 
-import Network.MPDMPD.Tags ( MetaField(..), MetaContent, Tags, mkTags )
+import Network.MPDMPD.Tags ( MetaField, MetaContent, Tags, mkTags )
 
 import Data.Text ( Text, pack )
 import Data.ByteString ( ByteString )
@@ -100,8 +100,8 @@ uri = URI . pack
 
 type QueryPred = (MetaField, MetaContent)
 
-queryStr :: MetaField -> String -> QueryPred
-queryStr f s = (f, pack s)
+(<?>) :: MetaField -> String -> QueryPred
+f <?> s = (f, pack s)
 
 
 type Seconds = Int

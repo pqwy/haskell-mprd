@@ -8,8 +8,11 @@ module Network.MPDMPD
 
 
 import Network.MPDMPD.Tags
-    ( MetaField(..), MetaContent
-    , tag, Tags, mkTags
+    ( MetaField, MetaContent
+    , Tags, mkTags
+    , metafieldToString, metafieldToBytestring
+    , stringToMetafield, bytestringToMetafield
+    , isPackedMetafield
     )
 import Network.MPDMPD.Types
     ( Text, ByteString
@@ -18,8 +21,7 @@ import Network.MPDMPD.Types
     , MPDError(..), AckError(..), Ack(..)
     , int2AckErr
     
-    , QueryPred, URI(..)
-    , queryStr
+    , QueryPred, URI(..), (<?>)
 
     , Seconds, PlaylistPos, PlaylistVersion(..), TrackID(..), JobID(..), OutputID(..)
     , Stats(..), Status(..), PlayState(..), SubsysChanged(..)
