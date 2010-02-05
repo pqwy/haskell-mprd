@@ -2,8 +2,64 @@
 
 Oh hai. Maor content soon.
 
-Also,
+### Also
 
 > darcs get http://patch-tag.com/r/pqwy/xyzzy
 
 ftw.
+
+### Get started.
+
+With
+
+~~~ {.haskell}
+import Network.MPDMPD
+import Control.Applicative
+
+main = connect >>= \c' ->
+        case c' of
+            e@(Left _) -> return ()
+            Right c -> do
+                cmd c ( map (\p -> ( plTrackPos p, trackFile (plTrack p) )
+                            <$> playlistidAll )
+                   >>= mapM_ print
+                cmd c (play 1)
+                close c
+~~~
+
+, oooor
+
+~~~ {.haskell}
+import Network.MPDMPD.Monad
+import qualified Network.MPDMPD.Tags as TS
+import Control.Monad.Trans
+
+import Control.Applicative
+import Data.Traversable
+
+main = runMPDt $ do
+    cmd ( map (\p -> ( plTrackPos p, trackFile (plTrack p) ))
+             <$> playlistidAll )
+        >>= lift . mapM_ print
+
+    tracks <- cmd ( (++) <$> search [TS.artist <?> "Alan Vega"]
+                         <*> search [TS.artist <?> "Suicide"] )
+
+    first <- cmd ( head <$> traverse (addid . trackFile) tracks )
+
+    cmd $ playid first
+~~~
+
+.
+
+* * *
+
+layout:
+
+* Commands.hs: primitive MPD-level commands. They form an Applicative, emitted using "command_list_begin".
+* cmd maps them into actions. It lives in Connection.hs.
+* Alternatively, Monad.hs provides a simple reader-over-either for managing the connection and MPD-related errors.
+* Types.hs are interface types.
+* Tags.hs behave like free-form tags but are faster.
+
+
