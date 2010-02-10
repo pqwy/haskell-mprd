@@ -1,4 +1,3 @@
-{-# LANGUAGE PackageImports  #-}
 module Network.MPDMPD.Monad
     ( module Network.MPDMPD
 
@@ -14,7 +13,7 @@ import Network.MPDMPD hiding
 import qualified Network.MPDMPD.Connection as C
 
 import Control.Monad
-import "mtl" Control.Monad.Trans
+import Control.Monad.Trans
 import Control.Applicative
 
 import Network

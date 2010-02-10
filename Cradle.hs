@@ -1,11 +1,10 @@
-{-# LANGUAGE PackageImports  #-}
 module Main where
 
 -- import Network.MPDMPD.Connection
 import Network.MPDMPD.Monad
 import Network.MPDMPD.Commands
 import qualified Network.MPDMPD.Tags as TS
-import "mtl" Control.Monad.Trans
+import Control.Monad.Trans
 
 import Data.List
 
@@ -13,23 +12,24 @@ import Control.Applicative
 import System.Environment
 
 
+oneshotWith :: (Show a) => FilePath -> Command a -> IO ()
+oneshotWith f c = 
+    (attachMPDt f $ cmd c >>= lift . print) >> return ()
+
+
 main1, main2, main3, main4 :: IO ()
 
-main1 = do attachMPDt "snippets/torture1.txt" $
-            cmd (length <$> listall Nothing) >>= lift . print
-           return ()
+main1 = "snippets/torture1.txt" `oneshotWith`
+            (length <$> listall Nothing)
 
-main2 = do attachMPDt "snippets/torture3.txt" $
-            cmd (length <$> listallinfo Nothing) >>= lift . print
-           return ()
+main2 = "snippets/torture3.txt" `oneshotWith`
+            (length <$> listallinfo Nothing)
 
-main3 = do attachMPDt "snippets/manyping.txt" $
-            cmd (ping *> ping *> ping *> ping) >>= lift . print
-           return ()
+main3 = "snippets/manyping.txt" `oneshotWith` 
+            (ping *> ping *> ping *> ping)
 
-main4 = do attachMPDt "snippets/torture3.txt" $
-            cmd (counter . mult 100 <$> listallinfo Nothing) >>= lift . print
-           return ()
+main4 = "snippets/torture3.txt" `oneshotWith` 
+            (counter . mult 100 <$> listallinfo Nothing)
     where
         counter = flip foldl' 0 $ \a u ->
                     case u of
