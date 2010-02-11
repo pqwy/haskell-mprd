@@ -61,10 +61,8 @@ protocolVersion :: (Monad m) => MPDt m String
 protocolVersion = C.protocolVersion `liftM` askConn
 
 
-runMPDtEx :: (MonadIO m) => MPDt m a
-          -> HostName -> Int -> Maybe String -> m (Result a)
-
-runMPDtEx (MPDt a) hn p pw = do
+runMPDtEx :: (MonadIO m) => HostName -> Int -> Maybe String -> MPDt m a -> m (Result a)
+runMPDtEx hn p pw (MPDt a) = do
     liftIO (C.connectEx hn p pw) >>= \mpd' ->
         case mpd' of
              Left e    -> return (Left e)
@@ -74,7 +72,7 @@ runMPDtEx (MPDt a) hn p pw = do
                  return res
 
 runMPDt :: (MonadIO m) => MPDt m a -> m (Result a)
-runMPDt m = runMPDtEx m "localhost" 6600 Nothing
+runMPDt = runMPDtEx "localhost" 6600 Nothing
 
 attachMPDt :: (MonadIO m) => FilePath -> MPDt m a -> m (Result a)
 attachMPDt fp (MPDt a) = liftIO (C.attachFile fp) >>= \(Right c) -> a c
