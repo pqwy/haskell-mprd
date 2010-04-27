@@ -1,12 +1,17 @@
-# libmpdmpd
+# the Music Player reDeemon library
 
 Oh hai. Maor content soon.
 
-### Also
+### also
 
 > darcs get http://patch-tag.com/r/pqwy/xyzzy
 
 ftw.
+
+### reDeemon?
+
+It's much faster than the other Haskell lib, and IMHO, better organized. The
+other one was beyond redemption.
 
 ### Get started.
 

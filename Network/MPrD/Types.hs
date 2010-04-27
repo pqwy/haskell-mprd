@@ -1,13 +1,13 @@
 {-# LANGUAGE TypeSynonymInstances  #-}
 
-module Network.MPDMPD.Types
+module Network.MPrD.Types
     ( Text, ByteString
     
     , Result
     , MPDError(..), AckError(..), Ack(..)
     , int2AckErr
     
-    , module Network.MPDMPD.Tags
+    , module Network.MPrD.Tags
     , QueryPred, URI(..)
     , (<?>)
 
@@ -21,7 +21,7 @@ module Network.MPDMPD.Types
     ) where
 
 
-import Network.MPDMPD.Tags ( MetaField, MetaContent, Tags, mkTags )
+import Network.MPrD.Tags ( MetaField, MetaContent, Tags, mkTags )
 
 import Data.Text ( Text, pack )
 import Data.ByteString ( ByteString )

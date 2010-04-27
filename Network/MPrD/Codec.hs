@@ -1,8 +1,9 @@
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances  #-}
 {-# LANGUAGE BangPatterns  #-}
+{-# LANGUAGE PackageImports  #-}
 
-module Network.MPDMPD.Codec
+module Network.MPrD.Codec
     ( Decoder, Parameter(..)
     , joinParams, (<+>), bsToString, stringToBs
 
@@ -16,9 +17,9 @@ module Network.MPDMPD.Codec
     , isOK, isAck, isListOK, readAck
     ) where
 
-import Network.MPDMPD.Tags
-import Network.MPDMPD.Types
-import Network.MPDMPD.Misc
+import Network.MPrD.Tags
+import Network.MPrD.Types
+import Network.MPrD.Misc
 
 import Data.Maybe
 import Control.Monad

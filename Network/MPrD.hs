@@ -1,20 +1,20 @@
 
-module Network.MPDMPD
-    ( module Network.MPDMPD.Tags
-    , module Network.MPDMPD.Types
-    , module Network.MPDMPD.Commands
-    , module Network.MPDMPD.Connection
+module Network.MPrD
+    ( module Network.MPrD.Tags
+    , module Network.MPrD.Types
+    , module Network.MPrD.Commands
+    , module Network.MPrD.Connection
     ) where
 
 
-import Network.MPDMPD.Tags
+import Network.MPrD.Tags
     ( MetaField, MetaContent
     , Tags, mkTags
     , metafieldToString, metafieldToBytestring
     , stringToMetafield, bytestringToMetafield
     , isPackedMetafield
     )
-import Network.MPDMPD.Types
+import Network.MPrD.Types
     ( Text, ByteString
     
     , Result
@@ -29,7 +29,7 @@ import Network.MPDMPD.Types
 
     , uri, lkpTag
     )
-import Network.MPDMPD.Commands
+import Network.MPrD.Commands
     ( Command, RangeLike
 
     , stats, status, clearerror, currentsong, idle
@@ -56,4 +56,4 @@ import Network.MPDMPD.Commands
     , commands, notcommands, tagtypes, urlhandlers
 
     )
-import Network.MPDMPD.Connection
+import Network.MPrD.Connection

@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings  #-}
 
-module Network.MPDMPD.Connection
+module Network.MPrD.Connection
     ( MPDConn
     , protocolVersion
     , connect, connectEx, cmd, cmds
@@ -9,9 +9,9 @@ module Network.MPDMPD.Connection
     ) where
 
 
-import Network.MPDMPD.Types
-import Network.MPDMPD.Commands
-import Network.MPDMPD.Codec ( Decoder, isOK, isListOK, isAck, readAck )
+import Network.MPrD.Types
+import Network.MPrD.Commands
+import Network.MPrD.Codec ( Decoder, isOK, isListOK, isAck, readAck )
 
 
 import Control.Monad

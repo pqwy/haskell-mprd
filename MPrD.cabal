@@ -1,6 +1,6 @@
-name:           libmpdmpd
-version:        0.1.1
-synopsis:       Another MPD client library
+name:           MPrD
+version:        0.1.2
+synopsis:       The Music Player reDeemon library
 author:         David Kaloper <david@pako.st>
 copyright:      2010 David Kaloper
 stability:      alpha
@@ -10,15 +10,15 @@ build-type:     Simple
 
 library
   exposed-modules:
-    Network.MPDMPD
-    Network.MPDMPD.Tags
-    Network.MPDMPD.Monad
+    Network.MPrD
+    Network.MPrD.Tags
+    Network.MPrD.Monad
   other-modules:
-    Network.MPDMPD.Misc
-    Network.MPDMPD.Types
-    Network.MPDMPD.Codec
-    Network.MPDMPD.Commands
-    Network.MPDMPD.Connection
+    Network.MPrD.Misc
+    Network.MPrD.Types
+    Network.MPrD.Codec
+    Network.MPrD.Commands
+    Network.MPrD.Connection
   
   build-depends:
     base        >= 4,

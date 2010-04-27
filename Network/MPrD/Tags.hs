@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings  #-}
 
-module Network.MPDMPD.Tags
+module Network.MPrD.Tags
     ( MetaField, MetaContent
 
     , Tags, mkTags

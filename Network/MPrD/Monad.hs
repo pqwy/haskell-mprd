@@ -1,5 +1,7 @@
-module Network.MPDMPD.Monad
-    ( module Network.MPDMPD
+{-# LANGUAGE PackageImports  #-}
+
+module Network.MPrD.Monad
+    ( module Network.MPrD
 
     , module Control.Monad.Trans
 
@@ -8,12 +10,12 @@ module Network.MPDMPD.Monad
     , cmd, cmds, protocolVersion
     ) where
 
-import Network.MPDMPD hiding
+import Network.MPrD hiding
             ( cmd, cmds, connect, connectEx, protocolVersion, attachFile )
-import qualified Network.MPDMPD.Connection as C
+import qualified Network.MPrD.Connection as C
 
 import Control.Monad
-import Control.Monad.Trans
+import "mtl" Control.Monad.Trans
 import Control.Applicative
 
 import Network

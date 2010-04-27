@@ -1,10 +1,12 @@
+{-# LANGUAGE PackageImports  #-}
+
 module Main where
 
--- import Network.MPDMPD.Connection
-import Network.MPDMPD.Monad
-import Network.MPDMPD.Commands
-import qualified Network.MPDMPD.Tags as TS
-import Control.Monad.Trans
+-- import Network.MPrD.Connection
+import Network.MPrD.Monad
+import Network.MPrD.Commands
+import qualified Network.MPrD.Tags as TS
+import "mtl" Control.Monad.Trans
 
 import Data.List
 

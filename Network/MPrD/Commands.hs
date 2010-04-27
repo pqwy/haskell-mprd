@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeFamilies #-}
 
 
-module Network.MPDMPD.Commands
+module Network.MPrD.Commands
     ( Command(..), RangeLike
 
     , stats, status, clearerror, currentsong, idle
@@ -32,15 +32,15 @@ module Network.MPDMPD.Commands
     ) where
 
 
-import Network.MPDMPD.Types
+import Network.MPrD.Types
     ( Text, ByteString
     , MetaField, MetaContent
     , URI(..), QueryPred, Seconds, PlaylistPos, PlaylistVersion(..), TrackID(..), JobID(..)
     , Output(..), OutputID(..), Stats, Status, SubsysChanged, Track, PlaylistTrack, Playlist, Range
     )
-import Network.MPDMPD.Tags
-import Network.MPDMPD.Codec
-import Network.MPDMPD.Misc
+import Network.MPrD.Tags
+import Network.MPrD.Codec
+import Network.MPrD.Misc
 
 
 import Prelude hiding ( repeat )

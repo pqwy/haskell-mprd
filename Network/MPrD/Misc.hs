@@ -1,4 +1,4 @@
-module Network.MPDMPD.Misc
+module Network.MPrD.Misc
     ( first, second
     ) where
 
