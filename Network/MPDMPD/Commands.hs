@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings  #-}
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
-{-# LANGUAGE FunctionalDependencies, MultiParamTypeClasses, UndecidableInstances  #-}
-{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE TypeFamilies #-}
 
 
 module Network.MPDMPD.Commands
@@ -31,7 +30,6 @@ module Network.MPDMPD.Commands
     , commands, notcommands, tagtypes, urlhandlers
 
     ) where
-
 
 
 import Network.MPDMPD.Types
@@ -69,19 +67,20 @@ instance Applicative Command where
         Commands (ax . bx) (ad >=> \(a', bss') -> first (a'$) <$> bd bss')
 
 
-class CmdBuilder c a | c -> a where
-    commandWith :: ByteString -> Decoder a -> c
+class CmdBuilder c where
+    type Res c :: *
+    commandWith :: ByteString -> Decoder (Res c) -> c
 
-instance CmdBuilder (Command a) a where
+instance CmdBuilder (Command a) where
+    type Res (Command a) = a
     commandWith s d = Command s d
 
--- This is the one requiring undecidable instances, but it is pretty
--- decidable in itself. Convenience.
-instance (CmdBuilder c a, Parameter p) => CmdBuilder (p -> c) a where
+instance (CmdBuilder c, Parameter p) => CmdBuilder (p -> c) where
+    type Res (p -> c) = Res c
     commandWith s d p = commandWith (s <+> encode p) d
 
 
-command :: (CmdBuilder a ()) => ByteString -> a
+command ::  (CmdBuilder c, Res c ~ ()) => ByteString -> c
 command s = commandWith s (nullDecoder ())
 
 
