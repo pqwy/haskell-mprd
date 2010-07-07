@@ -24,6 +24,7 @@ import Network.MPrD.Misc
 import Data.Maybe
 import Control.Monad
 import Control.Applicative
+import "mtl" Control.Monad.State
 
 import qualified Data.ByteString.Char8 as B
 import qualified Data.Text as T
@@ -361,7 +362,8 @@ isListOK = ( == "list_OK" )
 readAck :: ByteString -> Result Ack
 -- If we can't manage an ack all bets are probably off, but let's leave
 -- that to the client.
-readAck = maybe (Left $ OtherError "can't parse ack") Right . parseAck
+-- readAck = maybe (Left $ OtherError "can't parse ack") Right . parseAck
+readAck = maybe (Left $ OtherError "can't parse ack") Right . (parseAck' `evalStateT`)
 
 -- Yes. It's ugly. But lightweight.
 parseAck :: ByteString -> Maybe Ack
@@ -378,6 +380,23 @@ parseAck s = do
 
     return Ack { ackError = err, ackPosition = pos
                , ackCommand = errCmd, ackDescription = rest }
+
+
+edit :: (ByteString -> Maybe (a, ByteString)) -> StateT ByteString Maybe a
+edit f = get >>= lift . f >>= \(a, b) -> put b >> return a
+
+parseAck' :: StateT ByteString Maybe Ack
+parseAck' = do
+    get >>= guard . ("ACK [" `B.isPrefixOf`)
+    err <- int2AckErr <$> edit (B.readInt . B.drop 5)
+    pos <- edit B.uncons >> edit B.readInt
+    cmd <- modify (snd . B.break (== '{')) >> edit B.uncons >>
+            edit (Just . B.break (== '}')) >>= \c -> return $
+                if B.null c then Nothing else Just (B.unpack c)
+    rest <- edit B.uncons >> gets (dropWhile (== ' ') . B.unpack) 
+
+    return Ack { ackError = err, ackPosition = pos
+               , ackCommand = cmd, ackDescription = rest }
 
 -- }}}
 
