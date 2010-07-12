@@ -11,43 +11,46 @@ The other one was beyond any redemption.
 
 With
 
+    import Network.MPrD
+    import Control.Applicative ( (<$>) )
 
-    import Network.MPDMPD
-    import Control.Applicative
-    
     main = connect >>= \c' ->
             case c' of
                 e@(Left _) -> return ()
                 Right c -> do
-                    cmd c ( map (\p -> ( plTrackPos p, trackFile (plTrack p) )
-                                <$> playlistidAll )
-                       >>= mapM_ print
+                    cmd c posTrack >>= either (\_ -> return ()) (mapM_ print)
                     cmd c (play 1)
                     close c
+
+                    return ()
+    where
+        posTrack = map (\p -> (plTrackPos p, (trackFile . plTrack) p))
+                    <$> playlistidAll
 
 
 ...oooor...
 
+    import qualified Network.MPrD.Commands as Cmd
+    import Network.MPrD.Monad
+    import qualified Network.MPrD.Tags as TAG
+    import "mtl" Control.Monad.Trans ( lift )
 
-    import Network.MPDMPD.Monad
-    import qualified Network.MPDMPD.Tags as TS
-    import Control.Monad.Trans
-    
-    import Control.Applicative
-    import Data.Traversable
-    
+    import Control.Applicative ( Applicative(..), (<$>) )
+    import Data.Traversable ( Traversable(..) )
+
     main = runMPDt $ do
-        cmd ( map (\p -> ( plTrackPos p, trackFile (plTrack p) ))
-                 <$> playlistidAll )
-            >>= lift . mapM_ print
-    
-        tracks <- cmd ( (++) <$> search [TS.artist <?> "Alan Vega"]
-                             <*> search [TS.artist <?> "Suicide"] )
-    
-        first <- cmd ( head <$> traverse (addid . trackFile) tracks )
-    
-        cmd $ playid first
+        cmd posTrack >>= lift . mapM_ print
 
+        tracks <- cmd ( (++) <$> Cmd.search [TAG.artist <?> "Alan Vega"]
+                             <*> Cmd.search [TAG.artist <?> "Suicide"] )
+
+        first <- cmd ( head <$> traverse (Cmd.addid . trackFile) tracks )
+
+        cmd (Cmd.playid first)
+
+      where
+        posTrack = map (\p -> ( plTrackPos p, trackFile (plTrack p) ))
+                        <$> Cmd.playlistidAll
 
 ### Layout ###
 
