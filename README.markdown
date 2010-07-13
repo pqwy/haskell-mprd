@@ -1,11 +1,15 @@
-# The Music Player reDeemon library #
+
+The Music Player reDeemon library
+---------------------------------
 
 > FTW!
+
 
 ### reDeemon? ###
 
 It's much faster than the other Haskell lib, and IMHO, better organized.
 The other one was beyond any redemption.
+
 
 ### Get started. ###
 
@@ -28,7 +32,7 @@ With
                     <$> playlistidAll
 
 
-...oooor...
+... oooor ...
 
     import qualified Network.MPrD.Commands as Cmd
     import Network.MPrD.Monad
@@ -52,21 +56,27 @@ With
         posTrack = map (\p -> ( plTrackPos p, trackFile (plTrack p) ))
                         <$> Cmd.playlistidAll
 
+
 ### Layout ###
 
-`Commands.hs`  
-Primitive MPD-level commands. They form an Applicative, emitted using `command_list_begin` when combined.
+* `Commands.hs`  
 
-`Connection.hs`  
-    cmd :: Command a -> IO a
+  Primitive MPD-level commands. They form an Applicative, emitted using `command_list_begin` when combined.
 
-`Monad.hs`  
-A simple reader-over-either for managing the connection and MPD-related errors.
+* `Connection.hs`  
 
-`Types.hs`  
-Interface types.
+      cmd :: Command a -> IO a
 
-`Tags.hs`  
-Tags behave like free-form tags, only faster.
+* `Monad.hs`  
+
+  A simple reader-over-either for managing the connection and MPD-related errors.
+
+* `Types.hs`  
+
+  Interface types.
+
+* `Tags.hs`  
+
+  Tags behave like free-form tags, only faster.
 
 
